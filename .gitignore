@@ -1,0 +1,44 @@
+# Python environments and build outputs
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Test and tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local settings and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Local media, outputs, and logs
+data/
+uploads/
+outputs/
+logs/
+*.log
+*.mp4
+*.mov
+*.wav
+*.mp3
+
+# Editor and operating system files
+.DS_Store
+.idea/
+.vscode/
