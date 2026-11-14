@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import wave
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +41,9 @@ class TranscriptWord:
     end_ms: int
     confidence: float | None = None
     speaker: int | None = None
+    timing_adjusted: bool = False
+    original_start_ms: int | None = None
+    original_end_ms: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +74,10 @@ def _number(value: object) -> float:
     return result
 
 
-def _parse_response(data: object, language: str) -> Transcript:
+def _parse_response(data: object, language: str, frames: int, sample_rate: int) -> Transcript:
+    # Integer timestamps must not round beyond the actual final audio sample.
+    duration_seconds = frames / sample_rate
+    duration_ms = frames * 1000 // sample_rate
     try:
         if not isinstance(data, dict):
             raise TypeError
@@ -88,6 +95,14 @@ def _parse_response(data: object, language: str) -> Transcript:
             end = _number(item["end"])
             if start < 0 or end < start:
                 raise InvalidTranscriptError("Transcription provider returned invalid word timings")
+            if start >= duration_seconds:
+                raise InvalidTranscriptError(
+                    "Transcription provider returned a word beyond the audio"
+                )
+            original_start_ms = round(start * 1000)
+            original_end_ms = round(end * 1000)
+            start_adjusted = original_start_ms > duration_ms
+            end_adjusted = end > duration_seconds or original_end_ms > duration_ms
             confidence = item.get("confidence")
             confidence = None if confidence is None else _number(confidence)
             if confidence is not None and not 0 <= confidence <= 1:
@@ -100,10 +115,13 @@ def _parse_response(data: object, language: str) -> Transcript:
             words.append(
                 TranscriptWord(
                     text=text,
-                    start_ms=round(start * 1000),
-                    end_ms=round(end * 1000),
+                    start_ms=min(original_start_ms, duration_ms),
+                    end_ms=min(original_end_ms, duration_ms),
                     confidence=confidence,
                     speaker=speaker,
+                    timing_adjusted=start_adjusted or end_adjusted,
+                    original_start_ms=original_start_ms if start_adjusted else None,
+                    original_end_ms=original_end_ms if end_adjusted else None,
                 )
             )
     except (KeyError, IndexError, TypeError, OverflowError):
@@ -118,8 +136,26 @@ def _chunks(handle: BinaryIO) -> Iterator[bytes]:
         yield chunk
 
 
+def _wav_duration(path: Path) -> tuple[int, int]:
+    """Return PCM sample frames and rate; reject unreadable or truncated audio."""
+    try:
+        with wave.open(str(path), "rb") as audio:
+            frames = audio.getnframes()
+            sample_rate = audio.getframerate()
+            if frames <= 0 or sample_rate <= 0:
+                raise InvalidAudioError("Audio must contain at least one sample")
+            # Check the last sample frame exists without loading the whole file.
+            audio.setpos(frames - 1)
+            expected_bytes = audio.getnchannels() * audio.getsampwidth()
+            if len(audio.readframes(1)) != expected_bytes:
+                raise InvalidAudioError("WAV audio is truncated")
+            return frames, sample_rate
+    except (OSError, EOFError, wave.Error, ValueError):
+        raise InvalidAudioError("Choose a valid, uncompressed PCM WAV audio file") from None
+
+
 class DeepgramTranscriber:
-    """Transcribe an explicitly selected WAV file using Deepgram's REST API."""
+    """Transcribe PCM WAV audio, clamping and flagging out-of-range word ends."""
 
     def __init__(
         self,
@@ -146,6 +182,7 @@ class DeepgramTranscriber:
             raise InvalidAudioError("Could not access the audio file") from None
         if size <= 0 or size > 2_000_000_000:
             raise InvalidAudioError("Audio must be non-empty and no larger than 2 GB")
+        frames, sample_rate = _wav_duration(path)
 
         def post(client: httpx.Client) -> httpx.Response:
             with path.open("rb") as audio_file:
@@ -185,4 +222,4 @@ class DeepgramTranscriber:
         except ValueError:
             message = "Transcription provider returned an invalid response"
             raise InvalidTranscriptError(message) from None
-        return _parse_response(data, self._language)
+        return _parse_response(data, self._language, frames, sample_rate)

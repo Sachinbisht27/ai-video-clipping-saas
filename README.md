@@ -39,13 +39,13 @@ The input must have video and audio streams. The output must not already exist. 
 
 ## Local transcription
 
-Add your development key as `DEEPGRAM_API_KEY` in `.env`, then transcribe an extracted WAV file:
+Add your development key as `DEEPGRAM_API_KEY` in `.env`, then transcribe an extracted uncompressed PCM WAV file:
 
 ```sh
 uv run python -m clipforge.transcribe_cli /path/to/audio.wav outputs/transcript.json
 ```
 
-Create the output directory beforehand. The command sends the selected audio to Deepgram and may consume API credits. Use audio you have permission to process. The output contains the spoken words and their start and end times in milliseconds; store transcripts in the ignored `outputs/` directory because they may contain private content. The output file must not already exist.
+Create the output directory beforehand. The command sends the selected audio to Deepgram and may consume API credits. Use audio you have permission to process. The output contains the spoken words and their start and end times in milliseconds; store transcripts in the ignored `outputs/` directory because they may contain private content. The output file must not already exist. Word endings beyond the actual WAV duration are capped and marked `timing_adjusted`, with the provider's original time retained in `original_end_ms`. A word starting outside the audio is rejected. Bounds alone do not guarantee that a timestamp is accurately aligned with speech.
 
 The key is loaded from `.env` for local use; an environment variable takes precedence. Docker Compose passes it to the API container when the container is created. Recreate the container after changing the key. The API does not yet expose a transcription endpoint. Automated tests simulate Deepgram responses and do not call the service.
 
