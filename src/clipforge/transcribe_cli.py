@@ -9,8 +9,8 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr, ValidationError
+from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 
 from clipforge.services.transcription import DeepgramTranscriber, TranscriptionError
 
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     deepgram_api_key: SecretStr = SecretStr("")
+    deepgram_region: str = "global"
 
 
 def main() -> int:
@@ -33,11 +34,14 @@ def main() -> int:
         return 1
     try:
         settings = Settings()
-        transcript = DeepgramTranscriber(settings.deepgram_api_key.get_secret_value()).transcribe(
-            args.audio
-        )
+        transcript = DeepgramTranscriber(
+            settings.deepgram_api_key.get_secret_value(), region=settings.deepgram_region
+        ).transcribe(args.audio)
     except TranscriptionError as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except (ValidationError, SettingsError, OSError, UnicodeError):
+        print("Error: could not load transcription settings", file=sys.stderr)
         return 1
 
     try:
