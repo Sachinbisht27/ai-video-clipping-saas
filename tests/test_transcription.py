@@ -3,6 +3,7 @@
 import json
 import sys
 import traceback
+import wave
 from pathlib import Path
 
 import httpx
@@ -20,7 +21,11 @@ from clipforge.services.transcription import (
 @pytest.fixture
 def audio(tmp_path: Path) -> Path:
     path = tmp_path / "sample.wav"
-    path.write_bytes(b"synthetic-audio")
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(16000)
+        output.writeframes(b"\x00\x00" * 16000)
     return path
 
 
@@ -47,7 +52,7 @@ def test_transcription_sends_audio_and_normalizes_word_timestamps(audio: Path) -
         assert request.url.params["model"] == "nova-3"
         assert request.headers["authorization"] == "Token fake-test-key"
         assert request.headers["content-type"] == "audio/wav"
-        assert request.read() == b"synthetic-audio"
+        assert request.read() == audio.read_bytes()
         return httpx.Response(
             200,
             json=deepgram_result(
@@ -76,6 +81,85 @@ def test_transcription_sends_audio_and_normalizes_word_timestamps(audio: Path) -
     assert transcript.words[0].speaker == 0
     assert transcript.words[0].confidence == pytest.approx(0.98)
     assert (transcript.words[1].start_ms, transcript.words[1].end_ms) == (500, 900)
+    assert not transcript.words[0].timing_adjusted
+    assert transcript.words[0].original_end_ms is None
+
+
+@pytest.mark.parametrize("end", [1.475, 1.795, 2.105])
+def test_word_end_overrun_is_clamped_and_recorded(audio: Path, end: float) -> None:
+    response = deepgram_result([{"word": "last", "start": 0.9, "end": end}])
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=response))
+    ) as client:
+        transcript = DeepgramTranscriber("fake-test-key", client=client).transcribe(audio)
+    word = transcript.words[0]
+    assert (word.start_ms, word.end_ms) == (900, 1000)
+    assert word.timing_adjusted
+    assert word.original_end_ms == round(end * 1000)
+    assert word.original_start_ms is None
+
+
+@pytest.mark.parametrize("start", [1.0, 1.1])
+def test_word_start_at_or_after_audio_end_is_rejected(audio: Path, start: float) -> None:
+    response = deepgram_result([{"word": "outside", "start": start, "end": start + 0.5}])
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=response))
+    ) as client:
+        with pytest.raises(TranscriptionError, match="beyond the audio"):
+            DeepgramTranscriber("fake-test-key", client=client).transcribe(audio)
+
+
+def test_zero_duration_in_range_is_preserved(audio: Path) -> None:
+    response = deepgram_result([{"word": "short", "start": 0.5, "end": 0.5}])
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=response))
+    ) as client:
+        transcript = DeepgramTranscriber("fake-test-key", client=client).transcribe(audio)
+    assert transcript.words[0].start_ms == transcript.words[0].end_ms == 500
+    assert not transcript.words[0].timing_adjusted
+
+
+def test_submillisecond_rounding_does_not_cross_the_wav_end(tmp_path: Path) -> None:
+    audio = tmp_path / "fractional.wav"
+    with wave.open(str(audio), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(16000)
+        output.writeframes(b"\x00\x00" * 16014)
+    # Duration is 1.000875 seconds; rounded timestamps would be 1001 ms,
+    # but the last full millisecond inside the audio is 1000 ms.
+    response = deepgram_result([{"word": "last", "start": 1.0008, "end": 1.00085}])
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=response))
+    ) as client:
+        transcript = DeepgramTranscriber("fake-test-key", client=client).transcribe(audio)
+    word = transcript.words[0]
+    assert (word.start_ms, word.end_ms) == (1000, 1000)
+    assert word.timing_adjusted
+    assert word.original_start_ms == word.original_end_ms == 1001
+
+
+def test_invalid_wav_is_rejected_before_network(tmp_path: Path) -> None:
+    path = tmp_path / "invalid.wav"
+    path.write_bytes(b"not a wav")
+
+    def unexpected(_: httpx.Request) -> httpx.Response:
+        pytest.fail("Invalid WAV must not be sent to Deepgram")
+
+    with httpx.Client(transport=httpx.MockTransport(unexpected)) as client:
+        with pytest.raises(TranscriptionError, match="valid.*WAV"):
+            DeepgramTranscriber("fake-test-key", client=client).transcribe(path)
+
+
+def test_truncated_wav_is_rejected_before_network(audio: Path) -> None:
+    audio.write_bytes(audio.read_bytes()[:-20])
+
+    def unexpected(_: httpx.Request) -> httpx.Response:
+        pytest.fail("Truncated WAV must not be sent to Deepgram")
+
+    with httpx.Client(transport=httpx.MockTransport(unexpected)) as client:
+        with pytest.raises(TranscriptionError, match="truncated"):
+            DeepgramTranscriber("fake-test-key", client=client).transcribe(audio)
 
 
 def test_silent_audio_produces_empty_transcript(audio: Path) -> None:
