@@ -11,6 +11,11 @@ from typing import BinaryIO, Protocol
 
 import httpx
 
+_DEEPGRAM_ENDPOINTS = {
+    "global": "https://api.deepgram.com/v1/listen",
+    "india": "https://api.in.deepgram.com/v1/listen",
+}
+
 
 class TranscriptionError(Exception):
     """An expected, safe-to-display transcription error."""
@@ -164,13 +169,17 @@ class DeepgramTranscriber:
         client: httpx.Client | None = None,
         model: str = "nova-3",
         language: str = "en",
+        region: str = "global",
     ) -> None:
         if not api_key.strip():
             raise TranscriptionConfigurationError("Set DEEPGRAM_API_KEY before transcribing")
+        if region not in _DEEPGRAM_ENDPOINTS:
+            raise TranscriptionConfigurationError("DEEPGRAM_REGION must be 'global' or 'india'")
         self._api_key = api_key
         self._client = client
         self._model = model
         self._language = language
+        self._endpoint = _DEEPGRAM_ENDPOINTS[region]
 
     def transcribe(self, audio: Path) -> Transcript:
         path = Path(audio)
@@ -187,12 +196,13 @@ class DeepgramTranscriber:
         def post(client: httpx.Client) -> httpx.Response:
             with path.open("rb") as audio_file:
                 return client.post(
-                    "https://api.deepgram.com/v1/listen",
+                    self._endpoint,
                     params={
                         "model": self._model,
                         "language": self._language,
                         "smart_format": "true",
                         "diarize": "true",
+                        "mip_opt_out": "true",
                     },
                     headers={
                         "Authorization": f"Token {self._api_key}",
@@ -201,6 +211,7 @@ class DeepgramTranscriber:
                     },
                     content=_chunks(audio_file),
                     timeout=httpx.Timeout(660, connect=10),
+                    follow_redirects=False,
                 )
 
         try:

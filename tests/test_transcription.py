@@ -229,6 +229,7 @@ def test_cli_loads_test_dotenv_and_writes_transcript(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPGRAM_REGION", raising=False)
     (tmp_path / ".env").write_text("DEEPGRAM_API_KEY=fixture-key\n")
     audio = tmp_path / "sample.wav"
     audio.write_bytes(b"synthetic-audio")
@@ -236,8 +237,9 @@ def test_cli_loads_test_dotenv_and_writes_transcript(
     monkeypatch.setattr(sys, "argv", ["transcribe", str(audio), str(output)])
 
     class FakeTranscriber:
-        def __init__(self, api_key: str) -> None:
+        def __init__(self, api_key: str, *, region: str) -> None:
             assert api_key == "fixture-key"
+            assert region == "global"
 
         def transcribe(self, path: Path) -> Transcript:
             assert path == audio

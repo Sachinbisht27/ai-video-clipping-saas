@@ -47,7 +47,9 @@ uv run python -m clipforge.transcribe_cli /path/to/audio.wav outputs/transcript.
 
 Create the output directory beforehand. The command sends the selected audio to Deepgram and may consume API credits. Use audio you have permission to process. The output contains the spoken words and their start and end times in milliseconds; store transcripts in the ignored `outputs/` directory because they may contain private content. The output file must not already exist. Word endings beyond the actual WAV duration are capped and marked `timing_adjusted`, with the provider's original time retained in `original_end_ms`. A word starting outside the audio is rejected. Bounds alone do not guarantee that a timestamp is accurately aligned with speech.
 
-The key is loaded from `.env` for local use; an environment variable takes precedence. Docker Compose passes it to the API container when the container is created. Recreate the container after changing the key. The API does not yet expose a transcription endpoint. Automated tests simulate Deepgram responses and do not call the service.
+The key is loaded from `.env` for local use; an environment variable takes precedence. Set `DEEPGRAM_REGION=global` (the default) or `DEEPGRAM_REGION=india` to select the Deepgram endpoint. The client rejects unknown regions and does not silently fall back to a different region. Docker Compose passes both settings to the API container when it is created; recreate the container after changing them.
+
+Each transcription request sets `mip_opt_out=true` to opt the audio and transcript out of Deepgram's model-improvement program. Deepgram's stated retention and regional-processing guarantees apply only to Deepgram's processing, not automatically to this application's storage or other providers. Deepgram may retain usage metadata; consult its current data policy and account terms. The setting does not alter earlier requests. The API does not yet expose a transcription endpoint. Automated tests simulate Deepgram responses and do not call the service.
 
 ## Checks
 
