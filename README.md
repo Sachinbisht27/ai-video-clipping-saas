@@ -1,10 +1,11 @@
 # AI Video Clipping SaaS
 
-A starting point for an AI video clipping service, built with FastAPI and Python 3.12. The current project provides an API health endpoint and development infrastructure; video processing and clipping are not implemented yet.
+A starting point for an AI video clipping service, built with FastAPI and Python 3.12. The project provides an API health endpoint and a local video-to-audio ingestion step. Transcription, highlight selection, and clipping are not implemented yet.
 
 ## Requirements
 
 - Python 3.12 and [uv](https://docs.astral.sh/uv/getting-started/installation/) for local development
+- FFmpeg and FFprobe on `PATH` for video ingestion and its integration tests
 - Docker and Docker Compose for the containerized setup
 
 ## Local development
@@ -25,6 +26,16 @@ curl http://127.0.0.1:8000/api/v1/health
 ```
 
 This endpoint reports process liveness; it does not check database connectivity.
+
+## Local video ingestion
+
+For a video you are authorized to process, validate the MP4 and extract a mono, 16 kHz WAV file for transcription:
+
+```sh
+uv run python -m clipforge.cli /path/to/source.mp4 /path/to/audio.wav
+```
+
+The input must have video and audio streams. The output must not already exist. Keep source videos and generated audio out of version control; the `.gitignore` covers common media formats and local `data/`, `uploads/`, and `outputs/` directories. This command runs locally and does not upload or transcribe the video.
 
 ## Checks
 
