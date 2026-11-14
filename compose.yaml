@@ -3,6 +3,7 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-clipforge}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-clipforge}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
