@@ -2,45 +2,67 @@
 
 A work-in-progress tool for finding short clips in longer videos.
 
-The backend can extract audio and transcribe it with Deepgram. Highlight selection and video clipping are still in development.
+The backend can extract audio from an MP4 and transcribe it with Deepgram. Highlight selection and video clipping are still in development.
 
-## Run the API
+## Requirements
 
-You need Docker and Docker Compose.
+- [Git](https://git-scm.com/downloads)
+- [Docker and Docker Compose](https://docs.docker.com/get-started/get-docker/) to run the API and database
+- A Deepgram API key only if you want to transcribe audio
 
-```sh
-test -e .env || cp -n .env.example .env
-docker compose up --build -d
-```
+For local development and transcription without Docker, you'll also need [uv](https://docs.astral.sh/uv/getting-started/installation/), [Python 3.12](https://docs.astral.sh/uv/guides/install-python/#installing-a-specific-version), and [FFmpeg and FFprobe](https://ffmpeg.org/download.html).
 
-The first command keeps an existing `.env` file. The example password is for local development. Open the [API docs](http://127.0.0.1:8000/docs) once the containers are running.
+## First-time setup
 
-To stop the API and database without deleting database data:
+1. Clone the repository and enter the project folder:
+
+   ```sh
+   git clone https://github.com/Sachinbisht27/ai-video-clipping-saas.git
+   cd ai-video-clipping-saas
+   ```
+
+2. Create a local configuration file. This command preserves an existing `.env`:
+
+   ```sh
+   if [ ! -e .env ] && [ ! -L .env ]; then
+     cp .env.example .env
+   fi
+   ```
+
+   The example database password is for local development. Change it in `.env` before starting a new database if needed. Add your Deepgram API key as `DEEPGRAM_API_KEY` when you are ready to transcribe.
+
+3. Start your Docker engine, then build and start the API and PostgreSQL:
+
+   ```sh
+   docker compose up --build -d
+   ```
+
+Open the [API documentation](http://127.0.0.1:8000/docs) or check [API health](http://127.0.0.1:8000/api/v1/health). The health endpoint checks the API process, not the database. Docker runs the backend and database; there is no video-clipping interface yet.
+
+To stop the containers while keeping database data:
 
 ```sh
 docker compose down
 ```
 
-## Transcribe a video locally
+## Try transcription
 
-You need Python 3.12, [uv](https://docs.astral.sh/uv/getting-started/installation/), FFmpeg and FFprobe. Add your Deepgram key to `.env` as `DEEPGRAM_API_KEY`, then run:
+To extract audio and transcribe a local video, follow the [local development guide](docs/development.md#transcribe-a-video). The command sends audio to Deepgram and may use API credits. Use a video you have permission to process.
 
-```sh
-uv sync --locked
-mkdir -p outputs
-uv run python -m clipforge.cli /path/to/video.mp4 outputs/audio.wav
-uv run python -m clipforge.transcribe_cli outputs/audio.wav outputs/transcript.json
-```
+## Configuration and privacy
 
-Use a video you have permission to process and new output filenames. Transcription sends audio to Deepgram and may use API credits. Requests opt out of Deepgram's model-improvement program. Set `DEEPGRAM_REGION` in `.env` to `global` (default) or `india`.
+Keep `.env`, videos, and transcripts private. The `.env` file and the `data/`, `uploads/`, and `outputs/` folders are excluded from Git.
 
-Keep `.env`, recordings, and transcripts private. The `outputs/` directory is excluded from Git.
+`DEEPGRAM_REGION` selects `global` (default) or `india`. Transcription requests ask Deepgram to opt out of its model-improvement program. See [configuration](docs/development.md#configuration) for details.
 
-## Checks
+## Development and checks
 
-```sh
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy src
-```
+The [local development guide](docs/development.md) covers running the API without Docker, transcription, configuration, and checks.
+
+## Contributing
+
+If you have repository access, make changes on a branch and open a pull request against `main`. The required GitHub checks must pass before merging.
+
+## License
+
+No license has been added yet.
