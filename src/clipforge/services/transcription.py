@@ -129,7 +129,7 @@ def _parse_response(data: object, language: str, frames: int, sample_rate: int) 
                     original_end_ms=original_end_ms if end_adjusted else None,
                 )
             )
-    except (KeyError, IndexError, TypeError, OverflowError):
+    except KeyError, IndexError, TypeError, OverflowError:
         message = "Transcription provider returned an invalid response"
         raise InvalidTranscriptError(message) from None
     return Transcript(provider="deepgram", language=language, words=tuple(words))
@@ -155,7 +155,7 @@ def _wav_duration(path: Path) -> tuple[int, int]:
             if len(audio.readframes(1)) != expected_bytes:
                 raise InvalidAudioError("WAV audio is truncated")
             return frames, sample_rate
-    except (OSError, EOFError, wave.Error, ValueError):
+    except OSError, EOFError, wave.Error, ValueError:
         raise InvalidAudioError("Choose a valid, uncompressed PCM WAV audio file") from None
 
 

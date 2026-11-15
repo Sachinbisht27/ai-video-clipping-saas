@@ -1,5 +1,11 @@
 # AI Video Clipping SaaS
 
+[![CI](https://github.com/Sachinbisht27/ai-video-clipping-saas/actions/workflows/ci.yml/badge.svg)](https://github.com/Sachinbisht27/ai-video-clipping-saas/actions/workflows/ci.yml)
+[![Python 3.15](https://img.shields.io/badge/Python-3.15-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+
 A work-in-progress tool for finding short clips in longer videos.
 
 The backend can extract audio from an MP4 and transcribe it with Deepgram. Highlight selection and video clipping are still in development.
@@ -10,7 +16,7 @@ The backend can extract audio from an MP4 and transcribe it with Deepgram. Highl
 - [Docker and Docker Compose](https://docs.docker.com/get-started/get-docker/) to run the API and database
 - A Deepgram API key only if you want to transcribe audio
 
-For local development and transcription without Docker, you'll also need [uv](https://docs.astral.sh/uv/getting-started/installation/), [Python 3.12](https://docs.astral.sh/uv/guides/install-python/#installing-a-specific-version), and [FFmpeg and FFprobe](https://ffmpeg.org/download.html).
+For local development and transcription without Docker, you'll also need [uv](https://docs.astral.sh/uv/getting-started/installation/), [Python 3.15](https://docs.astral.sh/uv/guides/install-python/#installing-a-specific-version), and [FFmpeg and FFprobe](https://ffmpeg.org/download.html).
 
 ## First-time setup
 
