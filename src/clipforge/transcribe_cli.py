@@ -40,7 +40,7 @@ def main() -> int:
     except TranscriptionError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    except (ValidationError, SettingsError, OSError, UnicodeError):
+    except ValidationError, SettingsError, OSError, UnicodeError:
         print("Error: could not load transcription settings", file=sys.stderr)
         return 1
 

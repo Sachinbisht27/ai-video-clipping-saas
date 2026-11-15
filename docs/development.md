@@ -1,11 +1,11 @@
 # Local development
 
-These steps use Python 3.12, [uv](https://docs.astral.sh/uv/getting-started/installation/), [FFmpeg and FFprobe](https://ffmpeg.org/download.html) installed on your machine. See the [README](../README.md#first-time-setup) to clone the repository and create `.env`.
+These steps use Python 3.15, [uv](https://docs.astral.sh/uv/getting-started/installation/), [FFmpeg and FFprobe](https://ffmpeg.org/download.html) installed on your machine. See the [README](../README.md#first-time-setup) to clone the repository and create `.env`.
 
-If you don't have Python 3.12, [install it with uv](https://docs.astral.sh/uv/guides/install-python/#installing-a-specific-version):
+If you don't have Python 3.15, [install it with uv](https://docs.astral.sh/uv/guides/install-python/#installing-a-specific-version):
 
 ```sh
-uv python install 3.12
+uv python install 3.15
 ```
 
 ## Install dependencies
