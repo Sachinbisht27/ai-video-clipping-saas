@@ -36,6 +36,14 @@ uv run python -m clipforge.transcribe_cli outputs/audio.wav outputs/transcript.j
 
 The first command extracts mono, 16 kHz PCM WAV audio. The second sends that audio to Deepgram and saves words with timestamps in milliseconds. Both commands require new output filenames; they will not overwrite existing files.
 
+Transcription defaults to English and speaker model `v1`. For mixed-language audio, try multilingual mode and speaker model `v2`:
+
+```sh
+uv run python -m clipforge.transcribe_cli outputs/audio.wav outputs/multilingual.json --language multi --diarizer v2
+```
+
+Speaker labels are anonymous and may need correction. The output records which model was requested.
+
 Use content you have permission to process. Transcription may use Deepgram credits. Keep the output private; `outputs/` is ignored by Git.
 
 ## Configuration

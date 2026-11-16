@@ -169,16 +169,22 @@ class DeepgramTranscriber:
         client: httpx.Client | None = None,
         model: str = "nova-3",
         language: str = "en",
+        diarizer: str = "v1",
         region: str = "global",
     ) -> None:
         if not api_key.strip():
             raise TranscriptionConfigurationError("Set DEEPGRAM_API_KEY before transcribing")
         if region not in _DEEPGRAM_ENDPOINTS:
             raise TranscriptionConfigurationError("DEEPGRAM_REGION must be 'global' or 'india'")
+        if language not in {"en", "multi"}:
+            raise TranscriptionConfigurationError("Language must be 'en' or 'multi'")
+        if diarizer not in {"v1", "v2"}:
+            raise TranscriptionConfigurationError("Diarizer must be 'v1' or 'v2'")
         self._api_key = api_key
         self._client = client
         self._model = model
         self._language = language
+        self._diarizer = diarizer
         self._endpoint = _DEEPGRAM_ENDPOINTS[region]
 
     def transcribe(self, audio: Path) -> Transcript:
@@ -201,7 +207,7 @@ class DeepgramTranscriber:
                         "model": self._model,
                         "language": self._language,
                         "smart_format": "true",
-                        "diarize": "true",
+                        "diarize_model": self._diarizer,
                         "mip_opt_out": "true",
                     },
                     headers={

@@ -237,9 +237,11 @@ def test_cli_loads_test_dotenv_and_writes_transcript(
     monkeypatch.setattr(sys, "argv", ["transcribe", str(audio), str(output)])
 
     class FakeTranscriber:
-        def __init__(self, api_key: str, *, region: str) -> None:
+        def __init__(self, api_key: str, *, region: str, language: str, diarizer: str) -> None:
             assert api_key == "fixture-key"
             assert region == "global"
+            assert language == "en"
+            assert diarizer == "v1"
 
         def transcribe(self, path: Path) -> Transcript:
             assert path == audio
