@@ -28,6 +28,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Transcribe a local WAV using Deepgram")
     parser.add_argument("audio", type=Path, help="Path to the source WAV (sent to Deepgram)")
     parser.add_argument("output", type=Path, help="Path for a new transcript JSON file")
+    parser.add_argument(
+        "--language",
+        choices=("en", "multi"),
+        default="en",
+        help="Transcription language: English or multilingual (default: en)",
+    )
+    parser.add_argument(
+        "--diarizer",
+        choices=("v1", "v2"),
+        default="v1",
+        help="Deepgram prerecorded speaker model (default: v1)",
+    )
     args = parser.parse_args()
     if args.output.exists() or args.output.is_symlink() or not args.output.parent.is_dir():
         print("Error: output must be a new file in an existing directory", file=sys.stderr)
@@ -35,7 +47,10 @@ def main() -> int:
     try:
         settings = Settings()
         transcript = DeepgramTranscriber(
-            settings.deepgram_api_key.get_secret_value(), region=settings.deepgram_region
+            settings.deepgram_api_key.get_secret_value(),
+            region=settings.deepgram_region,
+            language=args.language,
+            diarizer=args.diarizer,
         ).transcribe(args.audio)
     except TranscriptionError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -53,6 +68,7 @@ def main() -> int:
                     {
                         "provider": transcript.provider,
                         "language": transcript.language,
+                        "diarization_model_requested": args.diarizer,
                         "full_text": transcript.full_text,
                         "words": [asdict(word) for word in transcript.words],
                     },

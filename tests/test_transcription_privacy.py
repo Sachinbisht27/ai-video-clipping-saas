@@ -115,8 +115,10 @@ def test_cli_loads_region_and_environment_overrides_dotenv(
     observed: list[str] = []
 
     class FakeTranscriber:
-        def __init__(self, api_key: str, *, region: str) -> None:
+        def __init__(self, api_key: str, *, region: str, language: str, diarizer: str) -> None:
             assert api_key == "fixture-key"
+            assert language == "en"
+            assert diarizer == "v1"
             observed.append(region)
 
         def transcribe(self, audio: Path) -> Transcript:
