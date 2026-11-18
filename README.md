@@ -8,7 +8,7 @@
 
 A work-in-progress tool for finding short clips in longer videos.
 
-The backend can extract audio from an MP4 and transcribe it with Deepgram. Highlight selection and video clipping are still in development.
+The backend can extract audio from an MP4, transcribe it with Deepgram, and find unranked candidate sections. Highlight ranking and video clipping are still in development.
 
 ## Requirements
 
@@ -63,7 +63,7 @@ Keep `.env`, videos, and transcripts private. The `.env` file and the `data/`, `
 
 ## Development and checks
 
-The [local development guide](docs/development.md) covers running the API without Docker, transcription, configuration, and checks.
+The [local development guide](docs/development.md) covers running the API without Docker, transcription, candidate selection, configuration, and checks.
 
 ## Contributing
 
