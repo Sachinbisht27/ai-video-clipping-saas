@@ -46,6 +46,18 @@ Speaker labels are anonymous and may need correction. The output records which m
 
 Use content you have permission to process. Transcription may use Deepgram credits. Keep the output private; `outputs/` is ignored by Git.
 
+## Find candidate sections
+
+After transcription, use the same WAV and the transcript it produced:
+
+```sh
+uv run python -m clipforge.candidates_cli outputs/transcript.json outputs/audio.wav outputs/candidates.json
+```
+
+This runs locally and creates a private, new JSON file with chronological, unranked candidates, their word timings, and speaker labels. It uses punctuation and pauses as hints, with word boundaries as a fallback; Deepgram utterance boundaries are not yet used. Candidates span 20–60 seconds and do not cross pauses of five seconds or more. Short sections, including a short remainder, may be omitted. Empty input can produce no candidates.
+
+Check the results by listening: boundaries do not guarantee a complete thought, and speaker labels can be wrong. Times are relative to the WAV, not necessarily the source video. Use the exact WAV used for transcription: the tool checks timing bounds but cannot verify that the files match or that audio and video timelines align.
+
 ## Configuration
 
 | Setting | Purpose |
