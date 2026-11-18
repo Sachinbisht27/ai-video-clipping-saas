@@ -49,12 +49,11 @@ def test_request_sends_user_context_and_strict_schema() -> None:
         assert system and len(user) == 1
         assert PRIVATE_TEXT not in json.dumps(system)
         numbered = json.loads(user[0]["content"])
-        assert [w["index"] for w in numbered] == [10, 11]
-        assert numbered[0]["text"] == PRIVATE_TEXT
-        assert numbered[0]["speaker"] == 0
-        assert numbered[0]["start_ms"] == 0
-        assert numbered[1]["end_ms"] == 1000
-        assert all(w["safe_start"] and w["safe_end"] for w in numbered)
+        assert [w[0] for w in numbered] == [10, 11]
+        assert numbered[0] == [10, PRIVATE_TEXT, 0, 500, 0, True, True]
+        assert numbered[1] == [11, "Done.", 500, 1000, 1, True, True]
+        assert "safe_start" in json.dumps(system)
+        assert "safe_end" in json.dumps(system)
         return httpx.Response(200, json=output([{"start_word_index": 10, "end_word_index": 11}]))
 
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
@@ -209,8 +208,8 @@ def test_safe_flags_preserve_overlapping_speaker_words() -> None:
     def respond(request: httpx.Request) -> httpx.Response:
         messages = json.loads(request.content)["messages"]
         numbered = json.loads(next(m["content"] for m in messages if m["role"] == "user"))
-        assert [w["safe_start"] for w in numbered] == [True, False, True]
-        assert [w["safe_end"] for w in numbered] == [False, True, True]
+        assert [w[5] for w in numbered] == [True, False, True]
+        assert [w[6] for w in numbered] == [False, True, True]
         return httpx.Response(200, json=output([]))
 
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
@@ -257,3 +256,24 @@ def test_invalid_input_fails_without_request(words: tuple[TranscriptWord, ...]) 
     with httpx.Client(transport=httpx.MockTransport(unexpected)) as client:
         with pytest.raises(GroqBoundaryError):
             GroqBoundaryProposer(KEY, client=client).propose(words)
+
+
+def test_compact_context_preserves_mixed_language_words() -> None:
+    words = (
+        TranscriptWord("Hello", 0, 400, speaker=0),
+        TranscriptWord("नमस्ते!", 400, 800, speaker=1),
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        messages = json.loads(request.content)["messages"]
+        text = next(m["content"] for m in messages if m["role"] == "user")
+        rows = json.loads(text)
+        assert rows == [
+            [40, "Hello", 0, 400, 0, True, True],
+            [41, "नमस्ते!", 400, 800, 1, True, True],
+        ]
+        return httpx.Response(200, json=output([{"start_word_index": 40, "end_word_index": 41}]))
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        result = GroqBoundaryProposer(KEY, client=client).propose(words, first_word_index=40)
+    assert result.proposals == (BoundaryProposal(40, 41),)
