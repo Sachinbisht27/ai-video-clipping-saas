@@ -58,6 +58,18 @@ This runs locally and creates a private, new JSON file with chronological, unran
 
 Check the results by listening: boundaries do not guarantee a complete thought, and speaker labels can be wrong. Times are relative to the WAV, not necessarily the source video. Use the exact WAV used for transcription: the tool checks timing bounds but cannot verify that the files match or that audio and video timelines align.
 
+## Try AI-assisted boundaries
+
+This experimental command sends transcript text, word timings, and anonymous speaker labels to OpenAI. It uses API credits and may incur charges even if a request fails. Requests set `store=false`; OpenAI documents abuse-monitoring retention and account-specific data controls in its [data controls guide](https://developers.openai.com/api/docs/guides/your-data). Set `OPENAI_API_KEY` in your local `.env` before running it:
+
+```sh
+uv run python -m clipforge.semantic_candidates_cli outputs/transcript.json outputs/audio.wav outputs/ai-candidates.json
+```
+
+Use the WAV that produced the transcript. The command requests boundary suggestions from `gpt-6.2-sol`, then checks the returned word indices and audio timings. The 20–60 second range is a target, so results can be shorter or longer. Output is a new private JSON file; it can include usage counts when the provider returns them. Requests are limited to 128,000 bytes of transcript data; longer transcripts are not automatically split yet.
+
+This is an experiment, not a finished clipping feature. Listening review is necessary: a valid timestamp does not prove the thought is complete, and transcript or speaker errors can affect suggestions. The application cannot verify that the WAV and transcript match or that the video and WAV timelines align.
+
 ## Configuration
 
 | Setting | Purpose |
@@ -65,6 +77,7 @@ Check the results by listening: boundaries do not guarantee a complete thought, 
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Local PostgreSQL credentials used by Docker Compose. |
 | `DEEPGRAM_API_KEY` | Required for transcription, but not for starting the API. |
 | `DEEPGRAM_REGION` | `global` (default) or `india`. The client does not silently fall back to another region. |
+| `OPENAI_API_KEY` | Required only for experimental AI-assisted boundary suggestions. |
 
 PostgreSQL uses the configured credentials when it first initializes its volume. Changing `.env` afterward does not update an existing database.
 
