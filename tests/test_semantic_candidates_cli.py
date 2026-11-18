@@ -270,3 +270,314 @@ def test_groq_explains_local_size_and_rate_limits(
     assert cli.main() == 1
     assert expected in capsys.readouterr().err
     assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("length", "target_min", "target_max", "status"),
+    [
+        ("short", 20_000, 60_000, "within_target"),
+        ("long", 60_000, 180_000, "shorter_than_target"),
+        ("both", 20_000, 180_000, "within_target"),
+    ],
+)
+def test_windowed_cli_forwards_length_and_returns_validated_result(
+    inputs: tuple[Path, Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    length: str,
+    target_min: int,
+    target_max: int,
+    status: str,
+) -> None:
+    transcript, audio, output = inputs
+    (transcript.parent / ".env").write_text("GROQ_API_KEY=fixture-groq\n")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "semantic",
+            str(transcript),
+            str(audio),
+            str(output),
+            "--provider",
+            "groq",
+            "--windowed",
+            "--length",
+            length,
+        ],
+    )
+    seen: list[tuple[int, str, str]] = []
+
+    class FakeGroq:
+        def __init__(self, api_key: str) -> None:
+            assert api_key == "fixture-groq"
+
+        def propose(
+            self,
+            words: Any,
+            *,
+            first_word_index: int = 0,
+            duration_mode: str = "both",
+            input_format: str = "segments",
+        ) -> BoundaryResult:
+            seen.append((first_word_index, duration_mode, input_format))
+            return BoundaryResult(
+                (BoundaryProposal(first_word_index, first_word_index + len(words) - 1),),
+                ModelUsage(10, 20),
+            )
+
+    monkeypatch.setattr(cli, "GroqBoundaryProposer", FakeGroq)
+    assert cli.main() == 0
+    result = json.loads(output.read_text())
+    assert seen == [(0, length, "segments")]
+    assert result["duration_mode"] == length
+    assert (result["target_min_ms"], result["target_max_ms"]) == (target_min, target_max)
+    assert result["candidates"][0]["duration_status"] == status
+    assert result["windowing"]["processing_complete"] is True
+    assert output.stat().st_mode & 0o777 == 0o600
+
+
+def test_windowed_cli_reports_partial_and_preserves_output(
+    inputs: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transcript, audio, output = inputs
+    (transcript.parent / ".env").write_text("GROQ_API_KEY=fixture-groq\n")
+    with wave.open(str(audio), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(100)
+        wav.writeframes(b"\x00\x00" * 50_000)
+    transcript.write_text(
+        json.dumps(
+            {
+                "words": [
+                    {"text": f"word-{i}", "start_ms": t, "end_ms": t + 1000}
+                    for i, t in enumerate((0, 100_000, 200_000, 300_000, 400_000, 490_000))
+                ]
+            }
+        )
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "semantic",
+            str(transcript),
+            str(audio),
+            str(output),
+            "--provider",
+            "groq",
+            "--windowed",
+            "--max-windows",
+            "1",
+        ],
+    )
+    seen: list[int] = []
+
+    class FakeGroq:
+        def __init__(self, api_key: str) -> None:
+            pass
+
+        def propose(
+            self,
+            words: Any,
+            *,
+            first_word_index: int = 0,
+            duration_mode: str = "both",
+            input_format: str = "segments",
+        ) -> BoundaryResult:
+            seen.append(first_word_index)
+            return BoundaryResult((BoundaryProposal(first_word_index, first_word_index),), None)
+
+    monkeypatch.setattr(cli, "GroqBoundaryProposer", FakeGroq)
+    assert cli.main() == 2
+    result = json.loads(output.read_text())
+    assert seen == [0]
+    assert result["windowing"]["total_windows"] > 1
+    assert result["windowing"]["next_window_index"] == 1
+    assert not result["windowing"]["processing_complete"]
+    assert result["candidates"]
+
+
+def test_windowed_groq_failure_stops_without_openai_fallback(
+    inputs: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transcript, audio, output = inputs
+    (transcript.parent / ".env").write_text(
+        "GROQ_API_KEY=fixture-groq\nOPENAI_API_KEY=fixture-openai\n"
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["semantic", str(transcript), str(audio), str(output), "--provider", "groq", "--windowed"],
+    )
+    seen: list[int] = []
+
+    class FakeGroq:
+        def __init__(self, api_key: str) -> None:
+            pass
+
+        def propose(
+            self,
+            words: Any,
+            *,
+            first_word_index: int = 0,
+            duration_mode: str = "both",
+            input_format: str = "segments",
+        ) -> BoundaryResult:
+            seen.append(first_word_index)
+            raise cli.GroqBoundaryError("Model provider rejected the request (HTTP 429)")
+
+    def no_openai(*args: object, **kwargs: object) -> None:
+        pytest.fail("Groq failure must not trigger OpenAI fallback")
+
+    monkeypatch.setattr(cli, "GroqBoundaryProposer", FakeGroq)
+    monkeypatch.setattr(cli, "OpenAIBoundaryProposer", no_openai)
+    assert cli.main() == 2
+    result = json.loads(output.read_text())
+    assert seen == [0]
+    assert result["windowing"]["windows"][0]["error"] == "provider rate limit reached"
+    assert result["windowing"]["next_window_index"] == 0
+    assert not result["windowing"]["processing_complete"]
+    assert result["candidates"] == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--provider", "openai", "--windowed"],
+        ["--provider", "openai", "--length", "long"],
+        ["--provider", "groq", "--start-window", "1"],
+        ["--provider", "groq", "--windowed", "--start-window", "-1"],
+        ["--provider", "groq", "--windowed", "--max-windows", "0"],
+    ],
+)
+def test_invalid_window_config_does_not_call_provider(
+    inputs: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch, args: list[str]
+) -> None:
+    transcript, audio, output = inputs
+    monkeypatch.setattr(sys, "argv", ["semantic", str(transcript), str(audio), str(output), *args])
+
+    def no_provider(*args: object, **kwargs: object) -> None:
+        pytest.fail("Invalid options must not contact any provider")
+
+    monkeypatch.setattr(cli, "GroqBoundaryProposer", no_provider)
+    monkeypatch.setattr(cli, "OpenAIBoundaryProposer", no_provider)
+    assert cli.main() == 1
+    assert not output.exists()
+
+
+def test_windowed_empty_transcript_requires_no_key_or_request(
+    inputs: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transcript, audio, output = inputs
+    transcript.write_text('{"words": []}')
+    (transcript.parent / ".env").unlink()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["semantic", str(transcript), str(audio), str(output), "--provider", "groq", "--windowed"],
+    )
+
+    def no_provider(*args: object, **kwargs: object) -> None:
+        pytest.fail("An empty transcript must not contact any provider")
+
+    monkeypatch.setattr(cli, "GroqBoundaryProposer", no_provider)
+    assert cli.main() == 0
+    assert json.loads(output.read_text())["candidates"] == []
+
+
+def test_combined_mode_marks_70_second_suggestion_within_preferred_range(
+    inputs: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transcript, audio, output = inputs
+    (transcript.parent / ".env").write_text("GROQ_API_KEY=fixture-groq\n")
+    with wave.open(str(audio), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(100)
+        wav.writeframes(b"\x00\x00" * 10_000)
+    transcript.write_text(
+        json.dumps({"words": [{"text": "Complete?", "start_ms": 0, "end_ms": 70_000}]})
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "semantic",
+            str(transcript),
+            str(audio),
+            str(output),
+            "--provider",
+            "groq",
+            "--windowed",
+            "--length",
+            "both",
+        ],
+    )
+
+    class FakeGroq:
+        def __init__(self, api_key: str) -> None:
+            pass
+
+        def propose(
+            self,
+            words: Any,
+            *,
+            first_word_index: int = 0,
+            duration_mode: str = "both",
+            input_format: str = "segments",
+        ) -> BoundaryResult:
+            return BoundaryResult((BoundaryProposal(first_word_index, first_word_index),), None)
+
+    monkeypatch.setattr(cli, "GroqBoundaryProposer", FakeGroq)
+    assert cli.main() == 0
+    result = json.loads(output.read_text())
+    assert (result["target_min_ms"], result["target_max_ms"]) == (20_000, 180_000)
+    assert result["candidates"][0]["duration_status"] == "within_target"
+
+
+def test_nonwindowed_groq_preserves_valid_suggestions_and_reports_rejections(
+    inputs: tuple[Path, Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    transcript, audio, output = inputs
+    (transcript.parent / ".env").write_text("GROQ_API_KEY=fixture-groq-secret\n")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "semantic",
+            str(transcript),
+            str(audio),
+            str(output),
+            "--provider",
+            "groq",
+            "--length",
+            "long",
+        ],
+    )
+
+    class FakeGroq:
+        def __init__(self, api_key: str) -> None:
+            assert api_key == "fixture-groq-secret"
+
+        def propose(
+            self, words: Any, *, duration_mode: str = "both", input_format: str = "segments"
+        ) -> BoundaryResult:
+            assert duration_mode == "long"
+            assert input_format == "segments"
+            return BoundaryResult((BoundaryProposal(0, 1),), ModelUsage(10, 10), 2)
+
+    monkeypatch.setattr(cli, "GroqBoundaryProposer", FakeGroq)
+    assert cli.main() == 2
+    data = json.loads(output.read_text())
+    assert data["rejected_proposals"] == 2
+    assert len(data["candidates"]) == 1
+    assert data["candidates"][0]["end_ms"] == 25_000
+    assert data["windowing"] is None
+    assert output.stat().st_mode & 0o777 == 0o600
+    captured = capsys.readouterr()
+    assert "fixture-groq-secret" not in captured.out + captured.err
+    assert "Hello." not in captured.out + captured.err
+    assert "proposals were rejected" in captured.err
