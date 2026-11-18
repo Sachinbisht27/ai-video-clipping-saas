@@ -70,10 +70,12 @@ class ModelUsage:
 
 @dataclass(frozen=True, slots=True)
 class BoundaryResult:
-    """Unverified word-index proposals and optional provider-reported usage."""
+    """Unverified proposals, usage, and counts of rejected and duplicate entries."""
 
     proposals: tuple[BoundaryProposal, ...]
     usage: ModelUsage | None
+    rejected_proposals: int = 0
+    duplicate_proposals: int = 0
 
 
 def _parse_usage(data: object) -> ModelUsage | None:

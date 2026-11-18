@@ -277,3 +277,288 @@ def test_compact_context_preserves_mixed_language_words() -> None:
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
         result = GroqBoundaryProposer(KEY, client=client).propose(words, first_word_index=40)
     assert result.proposals == (BoundaryProposal(40, 41),)
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected", "not_expected"),
+    [
+        ("both", ("short clips around 20–60", "longer clips around 60–180"), ()),
+        ("short", ("short clips around 20–60",), ("longer clips around 60–180",)),
+        ("long", ("longer clips around 60–180",), ("short clips around 20–60",)),
+    ],
+)
+def test_duration_mode_guides_model_without_making_length_a_hard_limit(
+    mode: str, expected: tuple[str, ...], not_expected: tuple[str, ...]
+) -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["max_completion_tokens"] == 2048
+        instructions = payload["messages"][0]["content"]
+        assert all(fragment in instructions for fragment in expected)
+        assert all(fragment not in instructions for fragment in not_expected)
+        assert "preferences, not hard limits" in instructions
+        assert "Do not cut a thought short" in instructions
+        assert "Return an empty" in instructions
+        return httpx.Response(200, json=output([]))
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        result = GroqBoundaryProposer(KEY, client=client).propose(WORDS, duration_mode=mode)  # type: ignore[arg-type]
+    assert result.proposals == ()
+
+
+def test_default_duration_mode_requests_both_short_and_long() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        instructions = json.loads(request.content)["messages"][0]["content"]
+        assert "short clips around 20–60" in instructions
+        assert "longer clips around 60–180" in instructions
+        assert "one type, both types, or none" in instructions
+        return httpx.Response(200, json=output([]))
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        GroqBoundaryProposer(KEY, client=client).propose(WORDS)
+
+
+@pytest.mark.parametrize("mode", ["", "medium", None, 1, []])
+def test_invalid_duration_mode_rejected_before_request(mode: object) -> None:
+    def unexpected(_: httpx.Request) -> httpx.Response:
+        pytest.fail("Invalid settings must never reach the provider")
+
+    with httpx.Client(transport=httpx.MockTransport(unexpected)) as client:
+        with pytest.raises(GroqBoundaryError, match="duration mode"):
+            GroqBoundaryProposer(KEY, client=client).propose(WORDS, duration_mode=mode)  # type: ignore[arg-type]
+        with pytest.raises(GroqBoundaryError, match="duration mode"):
+            GroqBoundaryProposer(KEY, client=client).propose((), duration_mode=mode)  # type: ignore[arg-type]
+
+
+def test_segment_input_keeps_overlapping_words_and_all_speaker_labels() -> None:
+    words = (
+        TranscriptWord(text="नमस्ते", start_ms=0, end_ms=1000, speaker=0),
+        TranscriptWord(text="world.", start_ms=900, end_ms=2000, speaker=1),
+        TranscriptWord(text="Question?", start_ms=2000, end_ms=3000, speaker=0),
+        TranscriptWord(text="Answer.", start_ms=3100, end_ms=4000, speaker=None),
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["max_completion_tokens"] == 4096
+        instructions = payload["messages"][0]["content"]
+        assert "start_word_index, end_word_index" in instructions
+        assert "only the second field" in instructions
+        assert "longer clips around 60–180" in instructions
+        assert "नमस्ते" not in instructions
+        rows = json.loads(payload["messages"][1]["content"])
+        assert rows == [
+            [10, 11, 0, 2000, [0, 1], "नमस्ते world."],
+            [12, 12, 2000, 3000, [0], "Question?"],
+            [13, 13, 3100, 4000, [None], "Answer."],
+        ]
+        return httpx.Response(200, json=output([{"start_word_index": 10, "end_word_index": 13}]))
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        proposals = (
+            GroqBoundaryProposer(KEY, client=client)
+            .propose(words, first_word_index=10, input_format="segments")
+            .proposals
+        )
+    assert proposals == (BoundaryProposal(10, 13),)
+
+
+@pytest.mark.parametrize("start,end", [(1, 2), (0, 0), (0, 1)])
+def test_segment_input_rejects_interior_word_boundaries(start: int, end: int) -> None:
+    words = (
+        TranscriptWord(text="first", start_ms=0, end_ms=500, speaker=0),
+        TranscriptWord(text="second", start_ms=500, end_ms=1000, speaker=0),
+        TranscriptWord(text="third.", start_ms=1000, end_ms=1500, speaker=0),
+    )
+    payload = output([{"start_word_index": start, "end_word_index": end}])
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload))
+    ) as c:
+        result = GroqBoundaryProposer(KEY, client=c).propose(words, input_format="segments")
+    assert result.proposals == ()
+    assert result.rejected_proposals == 1
+
+
+def test_segment_input_retains_valid_proposals_and_reports_each_invalid_boundary() -> None:
+    words = (
+        TranscriptWord(text="first", start_ms=0, end_ms=500, speaker=0),
+        TranscriptWord(text="second", start_ms=500, end_ms=1000, speaker=0),
+        TranscriptWord(text="third.", start_ms=1000, end_ms=1500, speaker=0),
+        TranscriptWord(text="fourth.", start_ms=1500, end_ms=2000, speaker=1),
+    )
+    payload = output(
+        [
+            {"start_word_index": 0, "end_word_index": 2},
+            {"start_word_index": 0, "end_word_index": 1},
+            {"start_word_index": 1, "end_word_index": 3},
+            {"start_word_index": 3, "end_word_index": 3},
+        ]
+    )
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload))
+    ) as client:
+        result = GroqBoundaryProposer(KEY, client=client).propose(words, input_format="segments")
+    assert result.proposals == (BoundaryProposal(0, 2), BoundaryProposal(3, 3))
+    assert result.rejected_proposals == 2
+
+
+def test_segment_input_counts_invalid_items_and_exact_duplicates() -> None:
+    words = (
+        TranscriptWord(text="first", start_ms=0, end_ms=500, speaker=0),
+        TranscriptWord(text="second.", start_ms=500, end_ms=1000, speaker=0),
+        TranscriptWord(text="third.", start_ms=1000, end_ms=1500, speaker=1),
+    )
+    valid = {"start_word_index": 0, "end_word_index": 1}
+    payload = output(
+        [
+            valid,
+            valid,
+            {"start_word_index": True, "end_word_index": 1},
+            {"start_word_index": 2, "end_word_index": 0},
+            {"start_word_index": 0, "end_word_index": 99},
+            {"start_word_index": 1, "end_word_index": 2},
+            {"start_word_index": 2},
+            {"start_word_index": 2, "end_word_index": 2},
+        ]
+    )
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload))
+    ) as client:
+        result = GroqBoundaryProposer(KEY, client=client).propose(words, input_format="segments")
+    assert result.proposals == (BoundaryProposal(0, 1), BoundaryProposal(2, 2))
+    assert result.rejected_proposals == 5
+    assert result.duplicate_proposals == 1
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"candidates": [], "candidates": []}',
+        '{"candidates": {}}',
+        '{"unexpected": []}',
+        "not-json",
+    ],
+)
+def test_segment_input_rejects_malformed_response_envelope(text: str) -> None:
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=response(text)))
+    ) as client:
+        with pytest.raises(GroqBoundaryError, match="invalid boundary data"):
+            GroqBoundaryProposer(KEY, client=client).propose(WORDS, input_format="segments")
+
+
+def test_word_input_does_not_count_segment_boundary_rejections() -> None:
+    payload = output([{"start_word_index": 0, "end_word_index": 1}])
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload))
+    ) as client:
+        result = GroqBoundaryProposer(KEY, client=client).propose(WORDS, input_format="words")
+    assert result.proposals == (BoundaryProposal(0, 1),)
+    assert result.rejected_proposals == 0
+
+
+def test_segment_input_preserves_every_word_and_has_periodic_safe_cuts() -> None:
+    words = tuple(
+        TranscriptWord(text=f"word{index}", start_ms=index * 100, end_ms=index * 100 + 100)
+        for index in range(61)
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        rows = json.loads(json.loads(request.content)["messages"][1]["content"])
+        assert [(row[0], row[1]) for row in rows] == [(0, 29), (30, 59), (60, 60)]
+        assert sum(len(row[5].split()) for row in rows) == len(words)
+        return httpx.Response(200, json=output([{"start_word_index": 0, "end_word_index": 60}]))
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        result = GroqBoundaryProposer(KEY, client=client).propose(words, input_format="segments")
+    assert result.proposals == (BoundaryProposal(0, 60),)
+
+
+def test_segment_input_ends_only_at_safe_overlap_boundaries() -> None:
+    words = tuple(
+        TranscriptWord(text=f"word{index}.", start_ms=index * 100, end_ms=4000, speaker=index % 2)
+        for index in range(40)
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        rows = json.loads(json.loads(request.content)["messages"][1]["content"])
+        assert len(rows) == 1
+        assert rows[0][:5] == [0, 39, 0, 4000, [0, 1]]
+        return httpx.Response(200, json=output([]))
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        GroqBoundaryProposer(KEY, client=client).propose(words, input_format="segments")
+
+
+def test_segment_input_rejects_more_than_900_words_before_request() -> None:
+    words = tuple(TranscriptWord(text="word", start_ms=i, end_ms=i + 1) for i in range(901))
+
+    def unexpected(_: httpx.Request) -> httpx.Response:
+        pytest.fail("Oversized request must not reach provider")
+
+    with httpx.Client(transport=httpx.MockTransport(unexpected)) as client:
+        with pytest.raises(GroqBoundaryError, match="too many words"):
+            GroqBoundaryProposer(KEY, client=client).propose(words, input_format="segments")
+
+
+def test_invalid_input_format_is_rejected_without_request() -> None:
+    def unexpected(_: httpx.Request) -> httpx.Response:
+        pytest.fail("Invalid settings must not reach provider")
+
+    with httpx.Client(transport=httpx.MockTransport(unexpected)) as client:
+        with pytest.raises(GroqBoundaryError, match="input format"):
+            GroqBoundaryProposer(KEY, client=client).propose(WORDS, input_format="bad")  # type: ignore[arg-type]
+        with pytest.raises(GroqBoundaryError, match="input format"):
+            GroqBoundaryProposer(KEY, client=client).propose((), input_format="bad")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        (
+            400,
+            {"error": {"code": "json_validate_failed", "message": KEY + PRIVATE_TEXT}},
+            "Model could not return structured boundaries",
+        ),
+        (
+            400,
+            {"error": {"code": "other", "message": "json_validate_failed" + KEY + PRIVATE_TEXT}},
+            "Model provider rejected the request (HTTP 400)",
+        ),
+        (
+            400,
+            {"error": {"code": "json_validate_failed_suffix", "message": KEY + PRIVATE_TEXT}},
+            "Model provider rejected the request (HTTP 400)",
+        ),
+        (
+            429,
+            {"error": {"code": "json_validate_failed", "message": KEY + PRIVATE_TEXT}},
+            "Model provider rejected the request (HTTP 429)",
+        ),
+        (400, {"error": PRIVATE_TEXT}, "Model provider rejected the request (HTTP 400)"),
+    ],
+)
+def test_structured_output_error_classification_is_exact_and_safe(
+    status: int, body: object, expected: str
+) -> None:
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(status, json=body))
+    ) as client:
+        with pytest.raises(GroqBoundaryError) as exc:
+            GroqBoundaryProposer(KEY, client=client).propose(WORDS, input_format="segments")
+    assert str(exc.value) == expected
+    trace = "".join(traceback.format_exception(exc.value))
+    assert KEY not in trace
+    assert PRIVATE_TEXT not in trace
+
+
+def test_non_json_http400_body_does_not_leak() -> None:
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(400, text=KEY + PRIVATE_TEXT))
+    ) as client:
+        with pytest.raises(GroqBoundaryError) as exc:
+            GroqBoundaryProposer(KEY, client=client).propose(WORDS, input_format="segments")
+    assert str(exc.value) == "Model provider rejected the request (HTTP 400)"
+    trace = "".join(traceback.format_exception(exc.value))
+    assert KEY not in trace
+    assert PRIVATE_TEXT not in trace

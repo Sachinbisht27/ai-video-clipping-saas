@@ -70,7 +70,17 @@ uv run python -m clipforge.semantic_candidates_cli outputs/transcript.json outpu
 uv run python -m clipforge.semantic_candidates_cli outputs/transcript.json outputs/audio.wav outputs/ai-candidates.json --provider groq
 ```
 
-Both commands require a new output file and the WAV used for transcription. They request word boundaries, then check the returned indices and audio timings. The 20–60 second range is a target, so results can be shorter or longer. The output is private and can include usage counts. Long transcripts are not automatically split yet. The transcript data limit per request is 128,000 bytes for OpenAI and 32,000 bytes for Groq; a request below these limits may still exceed provider quotas.
+Both commands require a new output file and the WAV used for transcription. They check returned word indices against the audio and write a private JSON file. Groq asks for short (20–60 seconds) and long (60–180 seconds) clips by default; `--length short` or `--length long` requests one type. These lengths are preferences, so results can be shorter or longer. OpenAI currently targets 20–60 seconds.
+
+For longer transcripts, Groq can process overlapping sections. Limit the first run to one section to check your account's quota:
+
+```sh
+uv run python -m clipforge.semantic_candidates_cli outputs/transcript.json outputs/audio.wav outputs/first-section.json --provider groq --windowed --max-windows 1
+```
+
+The output reports each attempted section, rejected proposals, token usage where available, and the next section to process. A partial run exits with status 2. Resume with `--start-window` and a new output filename. Exact duplicate word ranges are removed within each run; alternate boundaries and candidates from separate runs are preserved. Word limits or provider quotas can shorten sections or leave them unprocessed; overlap does not guarantee that every long thought fits in a section. Groq's windowed mode proposes boundaries at transcript segment edges, which may need refinement.
+
+The per-request transcript data limit is 128,000 bytes for OpenAI and 32,000 bytes for Groq; a request below these limits may still exceed provider quotas.
 
 Requests may incur charges, including on failure, depending on the selected provider and account. OpenAI requests set `store=false`; see [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data). Groq provides separate [data controls](https://console.groq.com/docs/your-data); zero data retention must be configured there, not in this application.
 
