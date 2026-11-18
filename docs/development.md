@@ -60,15 +60,21 @@ Check the results by listening: boundaries do not guarantee a complete thought, 
 
 ## Try AI-assisted boundaries
 
-This experimental command sends transcript text, word timings, and anonymous speaker labels to OpenAI. It uses API credits and may incur charges even if a request fails. Requests set `store=false`; OpenAI documents abuse-monitoring retention and account-specific data controls in its [data controls guide](https://developers.openai.com/api/docs/guides/your-data). Set `OPENAI_API_KEY` in your local `.env` before running it:
+This experiment sends transcript text, word timings, and anonymous speaker labels to the selected provider. Set the matching key in your local `.env`, then run one of:
 
 ```sh
-uv run python -m clipforge.semantic_candidates_cli outputs/transcript.json outputs/audio.wav outputs/ai-candidates.json
+# OpenAI; requires OPENAI_API_KEY and may use API credits
+uv run python -m clipforge.semantic_candidates_cli outputs/transcript.json outputs/audio.wav outputs/ai-candidates.json --provider openai
+
+# Groq; requires GROQ_API_KEY; check your account's free-tier limits
+uv run python -m clipforge.semantic_candidates_cli outputs/transcript.json outputs/audio.wav outputs/ai-candidates.json --provider groq
 ```
 
-Use the WAV that produced the transcript. The command requests boundary suggestions from `gpt-6.2-sol`, then checks the returned word indices and audio timings. The 20–60 second range is a target, so results can be shorter or longer. Output is a new private JSON file; it can include usage counts when the provider returns them. Requests are limited to 128,000 bytes of transcript data; longer transcripts are not automatically split yet.
+Both commands require a new output file and the WAV used for transcription. They request word boundaries, then check the returned indices and audio timings. The 20–60 second range is a target, so results can be shorter or longer. The output is private and can include usage counts. Long transcripts are not automatically split yet. The transcript data limit per request is 128,000 bytes for OpenAI and 32,000 bytes for Groq; a request below these limits may still exceed provider quotas.
 
-This is an experiment, not a finished clipping feature. Listening review is necessary: a valid timestamp does not prove the thought is complete, and transcript or speaker errors can affect suggestions. The application cannot verify that the WAV and transcript match or that the video and WAV timelines align.
+Requests may incur charges, including on failure, depending on the selected provider and account. OpenAI requests set `store=false`; see [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data). Groq provides separate [data controls](https://console.groq.com/docs/your-data); zero data retention must be configured there, not in this application.
+
+This is an experiment, not a finished clipping feature. Listen to results: valid timestamps do not prove a thought is complete, and transcript or speaker errors can affect suggestions. The application cannot verify that the WAV and transcript match or that the video and WAV timelines align.
 
 ## Configuration
 
@@ -77,7 +83,7 @@ This is an experiment, not a finished clipping feature. Listening review is nece
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Local PostgreSQL credentials used by Docker Compose. |
 | `DEEPGRAM_API_KEY` | Required for transcription, but not for starting the API. |
 | `DEEPGRAM_REGION` | `global` (default) or `india`. The client does not silently fall back to another region. |
-| `OPENAI_API_KEY` | Required only for experimental AI-assisted boundary suggestions. |
+| `OPENAI_API_KEY`, `GROQ_API_KEY` | Use the key for your selected experimental boundary provider. |
 
 PostgreSQL uses the configured credentials when it first initializes its volume. Changing `.env` afterward does not update an existing database.
 
