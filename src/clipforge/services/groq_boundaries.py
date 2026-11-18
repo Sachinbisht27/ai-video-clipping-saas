@@ -26,6 +26,12 @@ _MODEL = "openai/gpt-oss-120b"
 # A local guardrail, not a promise that a request fits any account's quota.
 _MAX_INPUT_BYTES = 32_000
 _MAX_OUTPUT_TOKENS = 2_048
+_COMPACT_FORMAT = (
+    " The transcript is a JSON array. Each row represents one word in this order: "
+    "[index, text, start_ms, end_ms, speaker, safe_start, safe_end]. "
+    "Indices are explicit and may begin above zero. Use the index in the first "
+    "column when returning candidate boundaries."
+)
 
 
 class GroqBoundaryError(ValueError):
@@ -122,19 +128,18 @@ class GroqBoundaryProposer:
             furthest_end = max(furthest_end, word.end_ms)
             prefix_ends.append(furthest_end)
         numbered = [
-            {
-                "index": first_word_index + index,
-                "text": word.text,
-                "start_ms": word.start_ms,
-                "end_ms": word.end_ms,
-                "speaker": word.speaker,
-                "safe_start": index == 0 or prefix_ends[index - 1] <= word.start_ms,
-                "safe_end": index == len(words) - 1
-                or prefix_ends[index] <= words[index + 1].start_ms,
-            }
+            [
+                first_word_index + index,
+                word.text,
+                word.start_ms,
+                word.end_ms,
+                word.speaker,
+                index == 0 or prefix_ends[index - 1] <= word.start_ms,
+                index == len(words) - 1 or prefix_ends[index] <= words[index + 1].start_ms,
+            ]
             for index, word in enumerate(words)
         ]
-        input_text = json.dumps(numbered, ensure_ascii=False)
+        input_text = json.dumps(numbered, ensure_ascii=False, separators=(",", ":"))
         try:
             input_size = len(input_text.encode("utf-8"))
         except UnicodeError:
@@ -144,7 +149,7 @@ class GroqBoundaryProposer:
         payload = {
             "model": _MODEL,
             "messages": [
-                {"role": "system", "content": _INSTRUCTIONS},
+                {"role": "system", "content": _INSTRUCTIONS + _COMPACT_FORMAT},
                 {"role": "user", "content": input_text},
             ],
             "max_completion_tokens": _MAX_OUTPUT_TOKENS,
