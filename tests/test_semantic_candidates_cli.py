@@ -17,6 +17,7 @@ from clipforge.services.semantic_candidates import BoundaryProposal
 def inputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, Path]:
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     (tmp_path / ".env").write_text("OPENAI_API_KEY=fixture-secret\n")
     audio = tmp_path / "audio.wav"
     with wave.open(str(audio), "wb") as wav:
@@ -48,7 +49,7 @@ def test_cli_sends_only_after_local_validation_and_writes_private_file(
     class FakeProposer:
         def __init__(self, api_key: str, *, model: str) -> None:
             assert api_key == "fixture-secret"
-            assert model == cli._MODEL
+            assert model == cli._MODELS["openai"]
 
         def propose(self, words: Any) -> BoundaryResult:
             assert [w.text for w in words] == ["Hello.", "Answer."]
@@ -57,7 +58,7 @@ def test_cli_sends_only_after_local_validation_and_writes_private_file(
     monkeypatch.setattr(cli, "OpenAIBoundaryProposer", FakeProposer)
     assert cli.main() == 0
     result = json.loads(output.read_text())
-    assert result["model"] == cli._MODEL
+    assert result["model"] == cli._MODELS["openai"]
     assert result["audio_duration_ms"] == 65000
     assert result["usage"] == {"input_tokens": 100, "output_tokens": 25, "reasoning_tokens": 5}
     assert result["candidates"][0]["end_ms"] == 25000
@@ -187,4 +188,85 @@ def test_provider_failure_does_not_expose_secret_or_private_text(
     captured = capsys.readouterr()
     assert "fixture-secret" not in captured.out + captured.err
     assert "private text" not in captured.out + captured.err
+    assert not output.exists()
+
+
+def test_groq_requires_explicit_selection_and_uses_its_own_key(
+    inputs: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transcript, audio, output = inputs
+    (transcript.parent / ".env").write_text(
+        "OPENAI_API_KEY=fixture-openai\nGROQ_API_KEY=fixture-groq\n"
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["semantic", str(transcript), str(audio), str(output), "--provider", "groq"]
+    )
+
+    class FakeGroq:
+        def __init__(self, api_key: str) -> None:
+            assert api_key == "fixture-groq"
+
+        def propose(self, words: Any) -> BoundaryResult:
+            return BoundaryResult((BoundaryProposal(0, 1),), ModelUsage(50, 10))
+
+    def no_openai(*args: object, **kwargs: object) -> None:
+        pytest.fail("Groq selection must not send data to OpenAI")
+
+    monkeypatch.setattr(cli, "OpenAIBoundaryProposer", no_openai)
+    monkeypatch.setattr(cli, "GroqBoundaryProposer", FakeGroq)
+    assert cli.main() == 0
+    result = json.loads(output.read_text())
+    assert result["provider"] == "groq"
+    assert result["model"] == "openai/gpt-oss-120b"
+    assert result["candidates"][0]["end_ms"] == 25000
+    assert "fixture-groq" not in output.read_text()
+
+
+def test_groq_missing_key_does_not_fall_back_to_openai(
+    inputs: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transcript, audio, output = inputs
+    monkeypatch.setattr(
+        sys, "argv", ["semantic", str(transcript), str(audio), str(output), "--provider", "groq"]
+    )
+
+    def no_provider(*args: object, **kwargs: object) -> None:
+        pytest.fail("Missing Groq credentials must not result in a provider request")
+
+    monkeypatch.setattr(cli, "OpenAIBoundaryProposer", no_provider)
+    monkeypatch.setattr(cli, "GroqBoundaryProposer", no_provider)
+    assert cli.main() == 1
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "expected"),
+    [
+        ("Transcript is too large for one model request", "shorter excerpt"),
+        ("Model provider rejected the request (HTTP 429)", "account quota"),
+    ],
+)
+def test_groq_explains_local_size_and_rate_limits(
+    inputs: tuple[Path, Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    provider_error: str,
+    expected: str,
+) -> None:
+    transcript, audio, output = inputs
+    (transcript.parent / ".env").write_text("GROQ_API_KEY=fixture-groq\n")
+    monkeypatch.setattr(
+        sys, "argv", ["semantic", str(transcript), str(audio), str(output), "--provider", "groq"]
+    )
+
+    class FakeGroq:
+        def __init__(self, api_key: str) -> None:
+            pass
+
+        def propose(self, words: Any) -> BoundaryResult:
+            raise cli.GroqBoundaryError(provider_error)
+
+    monkeypatch.setattr(cli, "GroqBoundaryProposer", FakeGroq)
+    assert cli.main() == 1
+    assert expected in capsys.readouterr().err
     assert not output.exists()
