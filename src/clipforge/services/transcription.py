@@ -49,6 +49,7 @@ class TranscriptWord:
     timing_adjusted: bool = False
     original_start_ms: int | None = None
     original_end_ms: int | None = None
+    original_speaker: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

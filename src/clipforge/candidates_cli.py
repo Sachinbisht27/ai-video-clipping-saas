@@ -26,6 +26,7 @@ class _WordData(BaseModel):
     timing_adjusted: bool = False
     original_start_ms: int | None = None
     original_end_ms: int | None = None
+    original_speaker: int | None = None
 
 
 class _TranscriptData(BaseModel):
