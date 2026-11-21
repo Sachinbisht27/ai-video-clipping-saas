@@ -86,6 +86,28 @@ Requests may incur charges, including on failure, depending on the selected prov
 
 This is an experiment, not a finished clipping feature. Listen to results: valid timestamps do not prove a thought is complete, and transcript or speaker errors can affect suggestions. The application cannot verify that the WAV and transcript match or that the video and WAV timelines align.
 
+## Correct speaker labels
+
+When you know two labels refer to the same person, make a corrected copy:
+
+```sh
+uv run python -m clipforge.speaker_cli outputs/transcript.json outputs/corrected.json --map 2=0
+```
+
+This changes every occurrence of label 2 in that transcript to label 0 and keeps the original label on changed words. It does not identify speakers or split a label used for multiple people. Review the mapping first; the original file stays unchanged.
+
+## Rank candidates
+
+The experimental ranking command sends candidate transcript text and nearby context to Groq. It uses `GROQ_API_KEY`, and requests may use account quota or incur charges. Use the same source transcript, WAV and candidate JSON that belong together:
+
+```sh
+uv run python -m clipforge.ranking_cli outputs/transcript.json outputs/audio.wav outputs/ai-candidates.json outputs/ranking.json
+```
+
+The default is one batch of up to four candidates. Use `--start-batch` and a new output file to continue, or `--max-batches` to request more. A partial or failed run saves available results and exits with status 2. Assessments may be suitable, unsuitable or uncertain; missing assessments are reported. The score and explanation are model opinions based on transcript text, not predictions of virality or checks of video or audio quality.
+
+Scores from separate batches are not calibrated against each other. Each batch has its own short and long order; when multiple batches are processed, the combined results stay in input order and must not be treated as a global leaderboard. Review the proposed clips and their cited source words before use.
+
 ## Configuration
 
 | Setting | Purpose |
