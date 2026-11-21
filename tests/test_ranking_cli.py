@@ -545,3 +545,49 @@ def test_boundary_variants_include_all_input_candidates_without_changing_ranking
     else:
         assert result["batches"][0]["detail"] == "Invalid, duplicate, or unknown model assessment"
         assert [item["candidate_id"] for item in result["ranking"]["missing"]] == ["w0_1", "w0_2"]
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_short_boundary_variants_preserve_each_candidate_and_score(
+    inputs: tuple[Path, Path, Path, Path], monkeypatch: pytest.MonkeyPatch, partial: bool
+) -> None:
+    transcript, audio, candidates_path, output = inputs
+    words = (
+        TranscriptWord("First", 0, 10_000, speaker=0),
+        TranscriptWord("ending.", 10_000, 13_555, speaker=0),
+        TranscriptWord("More.", 13_555, 16_195, speaker=0),
+    )
+    transcript.write_text(json.dumps({"words": [asdict(word) for word in words]}))
+    clips = build_ranking_candidates(
+        words, 120_000, (BoundaryProposal(0, 1), BoundaryProposal(0, 2))
+    )
+    candidates_path.write_text(
+        json.dumps({"candidates": [asdict(clip.candidate) for clip in clips]})
+    )
+    argv = ["rank", str(transcript), str(audio), str(candidates_path), str(output)]
+    if partial:
+        argv.extend(["--batch-size", "1"])
+    monkeypatch.setattr(sys, "argv", argv)
+
+    class FakeRanker:
+        def __init__(self, api_key: str) -> None:
+            pass
+
+        def rank(self, source: Any, batch: Any) -> GroqRankingResult:
+            return GroqRankingResult(
+                tuple(score(c, 40 if c.candidate_id == "w0_1" else 90) for c in batch), None
+            )
+
+    monkeypatch.setattr(cli, "GroqRanker", FakeRanker)
+    assert cli.main() == (2 if partial else 0)
+    result = json.loads(output.read_text())
+    assert result["boundary_variants"] == [["w0_1", "w0_2"]]
+    if partial:
+        assert result["ranking"]["short"][0]["assessment"]["score"] == 40
+        assert [item["candidate_id"] for item in result["ranking"]["missing"]] == ["w0_2"]
+    else:
+        assert [item["candidate"]["candidate_id"] for item in result["ranking"]["short"]] == [
+            "w0_2",
+            "w0_1",
+        ]
+        assert [item["assessment"]["score"] for item in result["ranking"]["short"]] == [90, 40]
