@@ -21,8 +21,19 @@ from clipforge.services.ranking import (
     build_ranking_candidates,
     validate_rankings,
 )
+from clipforge.services.ranking_variants import group_boundary_variants
 from clipforge.services.semantic_candidates import BoundaryProposal
 from clipforge.services.transcription import InvalidAudioError, TranscriptWord, _wav_duration
+
+_ASSESSMENT_ERROR_DETAILS = frozenset(
+    {
+        "Invalid, duplicate, or unknown model assessment",
+        "Invalid model score",
+        "Only suitable candidates may have a score",
+        "Model evidence is required for this decision",
+        "Model evidence is outside the candidate",
+    }
+)
 
 
 class _CandidateData(BaseModel):
@@ -85,6 +96,7 @@ def main() -> int:
                 supplied_words != expected_words
             ):
                 raise RankingError("Candidates do not match the source transcript")
+        boundary_variants = group_boundary_variants(candidates)
         total_batches = (len(candidates) + args.batch_size - 1) // args.batch_size
         if args.start_batch > total_batches or (candidates and args.start_batch == total_batches):
             raise RankingError("Starting batch is beyond the candidates")
@@ -137,13 +149,19 @@ def main() -> int:
                     }
                 )
                 break
-            except RankingError:
+            except RankingError as exc:
+                detail = str(exc)
                 reports.append(
                     {
                         "index": index,
                         "candidate_ids": candidate_ids,
                         "status": "failed",
                         "error": "invalid assessment",
+                        "detail": (
+                            detail
+                            if detail in _ASSESSMENT_ERROR_DETAILS
+                            else "Assessment validation failed"
+                        ),
                     }
                 )
                 break
@@ -190,6 +208,7 @@ def main() -> int:
                             else "single_batch"
                         ),
                         "batches": reports,
+                        "boundary_variants": boundary_variants,
                         "ranking": ranking_data,
                     },
                     output,

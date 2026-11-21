@@ -12,7 +12,7 @@ import pytest
 from clipforge import ranking_cli as cli
 from clipforge.services.groq_ranking import GroqRankingError, GroqRankingResult
 from clipforge.services.openai_boundaries import ModelUsage
-from clipforge.services.ranking import RankingAssessment, build_ranking_candidates
+from clipforge.services.ranking import RankingAssessment, RankingError, build_ranking_candidates
 from clipforge.services.semantic_candidates import BoundaryProposal
 from clipforge.services.transcription import TranscriptWord
 
@@ -329,11 +329,41 @@ def test_untrusted_assessments_fail_without_promoting_or_leaking(
     assert cli.main() == 2
     result = json.loads(output.read_text())
     assert result["batches"][0]["error"] == "invalid assessment"
+    assert result["batches"][0]["detail"] == (
+        "Model evidence is outside the candidate"
+        if kind == "evidence"
+        else "Invalid, duplicate, or unknown model assessment"
+    )
     assert not result["ranking"]["short"]
     assert not result["ranking"]["long"]
     captured = capsys.readouterr()
     assert secret not in captured.out + captured.err
     assert secret not in output.read_text()
+
+
+def test_unknown_ranking_validation_error_never_leaks_its_message(
+    inputs: tuple[Path, Path, Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, _, _, output = inputs
+    fake_ranker(monkeypatch)
+    original_validate = cli.validate_rankings
+    sensitive = "fixture-secret private-transcript"
+
+    def fail_model_assessments(words: Any, duration: int, candidates: Any, assessments: Any) -> Any:
+        if assessments:
+            raise RankingError(sensitive)
+        return original_validate(words, duration, candidates, assessments)
+
+    monkeypatch.setattr(cli, "validate_rankings", fail_model_assessments)
+    assert cli.main() == 2
+    result = json.loads(output.read_text())
+    assert result["batches"][0]["error"] == "invalid assessment"
+    assert result["batches"][0]["detail"] == "Assessment validation failed"
+    captured = capsys.readouterr()
+    assert sensitive not in captured.out + captured.err
+    assert sensitive not in output.read_text()
 
 
 def test_multiple_provider_batches_are_marked_uncalibrated_and_identified(
@@ -464,3 +494,54 @@ def test_provider_batch_errors_are_specific_static_and_safe(
     assert "fixture-secret" not in json.dumps(report)
     assert "private-transcript" not in json.dumps(report)
     assert "fixture-secret" not in output.read_text()
+
+
+@pytest.mark.parametrize("mode", ["full", "partial", "invalid"])
+def test_boundary_variants_include_all_input_candidates_without_changing_ranking(
+    inputs: tuple[Path, Path, Path, Path], monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    transcript, audio, candidates_path, output = inputs
+    words = (
+        TranscriptWord("Opening", 0, 10_000, speaker=0),
+        TranscriptWord("point.", 10_000, 59_000, speaker=1),
+        TranscriptWord("Extension.", 59_000, 61_000, speaker=1),
+    )
+    transcript.write_text(json.dumps({"words": [asdict(word) for word in words]}))
+    clips = build_ranking_candidates(
+        words, 120_000, (BoundaryProposal(0, 1), BoundaryProposal(0, 2))
+    )
+    candidates_path.write_text(
+        json.dumps({"candidates": [asdict(clip.candidate) for clip in clips]})
+    )
+    argv = ["rank", str(transcript), str(audio), str(candidates_path), str(output)]
+    if mode == "partial":
+        argv.extend(["--batch-size", "1"])
+    monkeypatch.setattr(sys, "argv", argv)
+
+    class FakeRanker:
+        def __init__(self, api_key: str) -> None:
+            pass
+
+        def rank(self, source: Any, batch: Any) -> GroqRankingResult:
+            if mode == "invalid":
+                return GroqRankingResult(
+                    (RankingAssessment("invented", "suitable", 99, "bad", 0, 0),), None
+                )
+            return GroqRankingResult(
+                tuple(score(c, 25 if c.candidate_id == "w0_1" else 90) for c in batch), None
+            )
+
+    monkeypatch.setattr(cli, "GroqRanker", FakeRanker)
+    assert cli.main() == (0 if mode == "full" else 2)
+    result = json.loads(output.read_text())
+    assert result["boundary_variants"] == [["w0_1", "w0_2"]]
+    if mode == "full":
+        assert result["ranking"]["short"][0]["assessment"]["score"] == 25
+        assert result["ranking"]["long"][0]["assessment"]["score"] == 90
+        assert result["ranking"]["responses_complete"] is True
+    elif mode == "partial":
+        assert result["ranking"]["short"][0]["candidate"]["candidate_id"] == "w0_1"
+        assert [item["candidate_id"] for item in result["ranking"]["missing"]] == ["w0_2"]
+    else:
+        assert result["batches"][0]["detail"] == "Invalid, duplicate, or unknown model assessment"
+        assert [item["candidate_id"] for item in result["ranking"]["missing"]] == ["w0_1", "w0_2"]
