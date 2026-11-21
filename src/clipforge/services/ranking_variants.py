@@ -11,13 +11,14 @@ from clipforge.services.semantic_candidates import SemanticCandidate
 def group_boundary_variants(
     candidates: Sequence[RankingCandidate],
 ) -> tuple[tuple[str, ...], ...]:
-    """Return candidate ID groups that share nearly identical time intervals.
+    """Return candidate ID groups that share similar time intervals.
 
     Candidates must already be validated against the same source transcript.
     Each group is anchored on its first input candidate; subsequent candidates
     must overlap that anchor by at least 95% of their union, and both their start
-    and end must differ from the anchor by at most five seconds. This avoids
-    joining a chain of individually similar but progressively different clips.
+    and end must differ from the anchor by at most five seconds. When both clips
+    are at most 20 seconds long, the thresholds are 80% and three seconds. This
+    avoids joining a chain of individually similar but progressively different clips.
 
     Groups are hints for review, not a quality judgment. All inputs and scores
     remain unchanged; ungrouped candidates are omitted from the returned groups.
@@ -56,16 +57,21 @@ def group_boundary_variants(
             if other_index in assigned:
                 continue
             other = items[other_index].candidate
+            both_short = (
+                anchor.end_ms - anchor.start_ms <= 20_000
+                and other.end_ms - other.start_ms <= 20_000
+            )
+            max_shift_ms = 3_000 if both_short else 5_000
             if (
-                abs(anchor.start_ms - other.start_ms) > 5_000
-                or abs(anchor.end_ms - other.end_ms) > 5_000
+                abs(anchor.start_ms - other.start_ms) > max_shift_ms
+                or abs(anchor.end_ms - other.end_ms) > max_shift_ms
             ):
                 continue
             overlap = max(
                 0, min(anchor.end_ms, other.end_ms) - max(anchor.start_ms, other.start_ms)
             )
             union = max(anchor.end_ms, other.end_ms) - min(anchor.start_ms, other.start_ms)
-            if overlap * 100 >= union * 95:
+            if overlap * 100 >= union * (80 if both_short else 95):
                 members.append(items[other_index].candidate_id)
                 assigned.add(other_index)
         if len(members) > 1:

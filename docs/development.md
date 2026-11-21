@@ -106,7 +106,7 @@ uv run python -m clipforge.ranking_cli outputs/transcript.json outputs/audio.wav
 
 The default is one batch of up to four candidates. Use `--start-batch` and a new output file to continue, or `--max-batches` to request more. A partial or failed run saves available results and exits with status 2. Assessments may be suitable, unsuitable or uncertain; missing assessments are reported. The score and explanation are model opinions based on transcript text, not predictions of virality or checks of video or audio quality.
 
-Scores from separate batches are not calibrated against each other. Each batch has its own short and long order; when multiple batches are processed, the combined results stay in input order and must not be treated as a global leaderboard. Review the proposed clips and their cited source words before use. The `boundary_variants` groups highlight similar time ranges for review; they do not select a better version, change scores, or remove candidates.
+Scores from separate batches are not calibrated against each other. Each batch has its own short and long order; when multiple batches are processed, the combined results stay in input order and must not be treated as a global leaderboard. Review the proposed clips and their cited source words before use. The `boundary_variants` groups highlight similar time ranges for review; they do not select a better version, change scores, or remove candidates. When both clips are at most 20 seconds, each must overlap the group’s first clip by at least 80% of their combined span, with starts and ends within three seconds. Other pairs require 95% overlap and a five-second limit.
 
 ## Configuration
 

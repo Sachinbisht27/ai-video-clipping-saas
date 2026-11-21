@@ -37,6 +37,43 @@ def test_reviewed_seventy_and_three_minute_boundary_variants_are_grouped() -> No
     assert items == (short_a, long_a, short_b, long_b)
 
 
+def test_reviewed_short_clip_boundaries_are_grouped_without_losing_either() -> None:
+    first = clip(0, 43, 0, 13_555)
+    second = clip(0, 52, 0, 16_195)
+    candidates = (first, second)
+    assert group_boundary_variants(candidates) == (("w0_43", "w0_52"),)
+    assert candidates == (first, second)
+
+
+def test_short_clip_thresholds_include_exact_boundaries() -> None:
+    base = clip(0, 1, 0, 12_000)
+    exactly_eighty_percent = clip(0, 2, 0, 15_000)
+    assert group_boundary_variants((base, exactly_eighty_percent)) == (("w0_1", "w0_2"),)
+
+
+def test_short_clips_still_require_both_overlap_and_small_endpoint_shifts() -> None:
+    assert group_boundary_variants((clip(0, 1, 0, 8000), clip(0, 2, 0, 10_001))) == ()
+    # Overlap exceeds 80%, but the ending differs by more than three seconds.
+    assert group_boundary_variants((clip(0, 1, 0, 16_000), clip(0, 2, 0, 19_500))) == ()
+    # Both endpoint shifts are within three seconds, but overlap is too low.
+    assert group_boundary_variants((clip(0, 1, 0, 12_000), clip(2, 3, 2500, 14_500))) == ()
+
+
+def test_short_clip_rule_does_not_apply_when_one_exceeds_twenty_seconds() -> None:
+    assert group_boundary_variants((clip(0, 1, 0, 19_000), clip(0, 2, 0, 21_000))) == ()
+    assert group_boundary_variants((clip(0, 1, 0, 20_000), clip(0, 2, 0, 21_000))) == (
+        ("w0_1", "w0_2"),
+    )
+
+
+def test_short_clip_grouping_still_uses_the_original_anchor() -> None:
+    first = clip(0, 1, 0, 15_000)
+    middle = clip(2, 3, 1500, 16_500)
+    last = clip(4, 5, 3000, 18_000)
+    assert group_boundary_variants((middle, last)) == (("w2_3", "w4_5"),)
+    assert group_boundary_variants((first, middle, last)) == (("w0_1", "w2_3"),)
+
+
 def test_overlap_and_each_endpoint_must_meet_thresholds() -> None:
     base = clip(0, 1, 0, 80_000)
     at_threshold = clip(0, 2, 0, 76_000)
