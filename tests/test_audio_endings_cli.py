@@ -108,6 +108,44 @@ def test_cli_reports_transcript_overlap_without_guessing_when_missing(
     suggestions = json.loads(output.read_text())["suggestions"]
     assert suggestions
     assert all(item["overlaps_transcript_word"] is expected for item in suggestions)
+    assert all(
+        item["removed_transcript_words"] == (None if transcript_range is None else 0)
+        for item in suggestions
+    )
+
+
+def test_cli_warns_when_an_earlier_ending_removes_a_whole_word(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    audio = tmp_path / "source.wav"
+    transcript = tmp_path / "transcript.json"
+    output = tmp_path / "review.json"
+    with wave.open(str(audio), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16_000)
+        wav.writeframes(b"\x70\x17" * 33_600 + b"\0\0" * 1_600 + b"\x70\x17" * 12_800)
+    transcript.write_text(
+        json.dumps(
+            {
+                "words": [
+                    {"text": "first", "start_ms": 2000, "end_ms": 2200},
+                    {"text": "last", "start_ms": 2300, "end_ms": 2400},
+                ]
+            }
+        )
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["audio_endings", str(audio), "0", "2500", str(output), "--transcript", str(transcript)],
+    )
+
+    assert audio_endings_cli.main() == 0
+    suggestions = json.loads(output.read_text())["suggestions"]
+    assert len(suggestions) == 1
+    assert suggestions[0]["overlaps_transcript_word"] is True
+    assert suggestions[0]["removed_transcript_words"] == 1
 
 
 def test_cli_rejects_transcript_timings_beyond_audio(
