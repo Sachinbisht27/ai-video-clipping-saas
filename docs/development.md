@@ -116,7 +116,9 @@ For an experimental local review of an existing clip's ending, provide its start
 uv run python -m clipforge.audio_endings_cli outputs/audio.wav 10000 45000 outputs/endings.json --transcript outputs/transcript.json
 ```
 
-The command looks for low-energy gaps near the original end and saves up to eight alternatives in a new private JSON file. It supports the mono, 16-bit, 16 kHz WAV produced by the extraction command. It does not change audio or select an ending. Listen to each option: a quiet gap can occur inside a word or thought, and noise, music, or overlapping speech can make the result misleading. An uncertain result may contain no options. When a transcript is provided, `overlaps_transcript_word` warns if a proposed cut falls inside a reported word; it does not detect omitted or incorrectly timed words, or words removed entirely. Without a transcript, that field is null. The WAV and transcript must match; the tool cannot verify that they do.
+The command looks for low-energy gaps near the original end and saves up to eight alternatives in a new private JSON file. It supports the mono, 16-bit, 16 kHz WAV produced by the extraction command. It does not change audio or select an ending. Listen to each option: a quiet gap can occur inside a word or thought, and noise, music, or overlapping speech can make the result misleading. An uncertain result may contain no options.
+
+With a transcript, `overlaps_transcript_word` warns if a proposed cut falls inside a reported word. `removed_transcript_words` counts words fully contained between that cut and the original end. Both fields are null without a transcript. These checks cannot detect omitted or incorrectly timed words, or prove that a cut preserves the thought. The WAV and transcript must match; the tool cannot verify that they do.
 
 ## Configuration
 

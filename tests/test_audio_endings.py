@@ -52,6 +52,7 @@ def test_gap_options_remain_within_original_clip_and_are_review_only(clear_gap: 
         assert result.analysis_start_ms <= item.gap_start_ms <= item.end_ms
         assert item.end_ms <= item.gap_end_ms <= result.analysis_end_ms
         assert item.overlaps_transcript_word is None
+        assert item.removed_transcript_words is None
     assert clear_gap.read_bytes() == original
 
 
@@ -62,6 +63,40 @@ def test_checked_transcript_overlap_is_distinct_from_not_checked(clear_gap: Path
     assert all(item.overlaps_transcript_word is True for item in overlapping.suggestions)
     assert checked_empty.suggestions
     assert all(item.overlaps_transcript_word is False for item in checked_empty.suggestions)
+    assert all(item.removed_transcript_words == 0 for item in checked_empty.suggestions)
+
+
+def test_reports_whole_words_removed_without_calling_cut_safe(clear_gap: Path) -> None:
+    baseline = propose_audio_endings(clear_gap, 1000, 3000)
+    assert len(baseline.suggestions) == 1
+    cut = baseline.suggestions[0].end_ms
+    result = propose_audio_endings(
+        clear_gap,
+        1000,
+        3000,
+        protected_ranges=[
+            (500, 900),  # Before the original clip.
+            (1900, cut),  # Ends exactly at the cut and remains.
+            (cut, cut + 100),  # Starts exactly at the cut and is removed.
+            (cut + 100, 3000),  # Ends exactly at the original boundary.
+            (2900, 3100),  # Not wholly contained in the original clip.
+            (3000, 3100),  # After the original clip.
+        ],
+    )
+    assert result.suggestions[0].overlaps_transcript_word is False
+    assert result.suggestions[0].removed_transcript_words == 2
+    assert result.start_ms == 1000
+    assert result.end_ms == 3000
+
+
+def test_count_and_overlap_warnings_are_independent(clear_gap: Path) -> None:
+    baseline = propose_audio_endings(clear_gap, 0, 3000)
+    cut = baseline.suggestions[0].end_ms
+    result = propose_audio_endings(
+        clear_gap, 0, 3000, protected_ranges=[(cut - 50, cut + 50), (cut + 60, cut + 100)]
+    )
+    assert result.suggestions[0].overlaps_transcript_word is True
+    assert result.suggestions[0].removed_transcript_words == 1
 
 
 def test_protected_interval_boundaries_are_not_inside_word(clear_gap: Path) -> None:

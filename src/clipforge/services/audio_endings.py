@@ -28,6 +28,7 @@ class EndingSuggestion:
     gap_end_ms: int
     # None means transcript timing was not supplied for this check.
     overlaps_transcript_word: bool | None
+    removed_transcript_words: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +92,8 @@ def propose_audio_endings(
     Input is mono, 16-bit, 16 kHz uncompressed PCM WAV, as produced by local
     ingestion. Report up to eight recent low-energy gaps with activity on both
     sides, ordered chronologically. Transcript timing ranges only add warnings;
-    no range can prove that cutting a particular sample preserves a word. Every
+    removed_transcript_words counts entries wholly inside the removed portion.
+    No range can prove that cutting a particular sample preserves a word. Every
     suggestion and the original boundary require human listening review.
     """
     if not _is_int(start_ms) or not _is_int(end_ms) or start_ms < 0 or end_ms <= start_ms:
@@ -170,7 +172,18 @@ def propose_audio_endings(
                         if checked_ranges is None
                         else any(a < candidate_end < b for a, b in checked_ranges)
                     )
-                    options.append(EndingSuggestion(candidate_end, gap_start, gap_end, overlap))
+                    removed = (
+                        None
+                        if checked_ranges is None
+                        else sum(
+                            1
+                            for a, b in checked_ranges
+                            if candidate_end <= a < end_ms and b <= end_ms
+                        )
+                    )
+                    options.append(
+                        EndingSuggestion(candidate_end, gap_start, gap_end, overlap, removed)
+                    )
             low_start = None
 
     truncated = len(options) > _MAX_SUGGESTIONS
