@@ -67,3 +67,61 @@ def test_cli_rejects_bad_transcript_without_creating_output(
 
     assert audio_endings_cli.main() == 1
     assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "transcript_range, expected", [(None, None), ((2000, 2300), True), ((0, 100), False)]
+)
+def test_cli_reports_transcript_overlap_without_guessing_when_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    transcript_range: tuple[int, int] | None,
+    expected: bool | None,
+) -> None:
+    audio = tmp_path / "source.wav"
+    output = tmp_path / "review.json"
+    with wave.open(str(audio), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16_000)
+        wav.writeframes(b"\x70\x17" * 33_600 + b"\0\0" * 1_600 + b"\x70\x17" * 12_800)
+    argv = ["audio_endings", str(audio), "0", "2500", str(output)]
+    if transcript_range is not None:
+        transcript = tmp_path / "transcript.json"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "words": [
+                        {
+                            "text": "word",
+                            "start_ms": transcript_range[0],
+                            "end_ms": transcript_range[1],
+                        }
+                    ]
+                }
+            )
+        )
+        argv.extend(["--transcript", str(transcript)])
+    monkeypatch.setattr(sys, "argv", argv)
+
+    assert audio_endings_cli.main() == 0
+    suggestions = json.loads(output.read_text())["suggestions"]
+    assert suggestions
+    assert all(item["overlaps_transcript_word"] is expected for item in suggestions)
+
+
+def test_cli_rejects_transcript_timings_beyond_audio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    audio, transcript, output = (
+        tmp_path / name for name in ("audio.wav", "words.json", "out.json")
+    )
+    make_silent_wav(audio)
+    transcript.write_text(json.dumps({"words": [{"text": "word", "start_ms": 0, "end_ms": 4000}]}))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["audio_endings", str(audio), "0", "2500", str(output), "--transcript", str(transcript)],
+    )
+    assert audio_endings_cli.main() == 1
+    assert not output.exists()
