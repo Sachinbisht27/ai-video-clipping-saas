@@ -120,6 +120,14 @@ The command looks for low-energy gaps near the original end and saves up to eigh
 
 With a transcript, `overlaps_transcript_word` warns if a proposed cut falls inside a reported word. `removed_transcript_words` counts words fully contained between that cut and the original end. Both fields are null without a transcript. These checks cannot detect omitted or incorrectly timed words, or prove that a cut preserves the thought. The WAV and transcript must match; the tool cannot verify that they do.
 
+To hear what follows an existing ending, create a separate preview with up to five seconds of extra audio:
+
+```sh
+uv run python -m clipforge.audio_context_cli outputs/audio.wav 10000 45000 outputs/with-context.wav --context-ms 3000
+```
+
+The command reports the original and preview end times and whether the source ended before the requested context. It does not detect laughter or select a new ending; extra audio may include a new thought, and the source itself may end mid-reaction. Listen and compare it with the original. Output must be a new file.
+
 ## Configuration
 
 | Setting | Purpose |
