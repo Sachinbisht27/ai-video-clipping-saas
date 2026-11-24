@@ -133,8 +133,11 @@ def propose_audio_endings(
         math.sqrt(sum(value * value for value in samples[i : i + _FRAME_SAMPLES]) / _FRAME_SAMPLES)
         for i in range(0, len(samples) - _FRAME_SAMPLES + 1, _FRAME_SAMPLES)
     )
-    peak = max(levels, default=0.0)
-    if peak < _MIN_ACTIVE_RMS:
+    # A single loud transient must not set the threshold for an otherwise
+    # continuous quiet signal. This remains a heuristic, not speech detection.
+    ordered = sorted(levels)
+    reference = ordered[math.ceil(len(ordered) * 0.95) - 1] if ordered else 0.0
+    if reference < _MIN_ACTIVE_RMS:
         return EndingReview(
             start_ms,
             end_ms,
@@ -146,7 +149,7 @@ def propose_audio_endings(
             False,
         )
 
-    threshold = peak * _RELATIVE_GAP_THRESHOLD
+    threshold = reference * _RELATIVE_GAP_THRESHOLD
     options: list[EndingSuggestion] = []
     low_start: int | None = None
     # The final sentinel flushes the last run; runs at either edge are omitted.
