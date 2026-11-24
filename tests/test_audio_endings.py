@@ -92,6 +92,22 @@ def test_persistent_background_signal_does_not_become_a_silence_gap(tmp_path: Pa
     assert not result.suggestions
 
 
+def test_brief_loud_transients_do_not_make_continuous_quiet_audio_a_gap(tmp_path: Path) -> None:
+    audio = tmp_path / "transients.wav"
+    make_wav(audio, [(1200, 500), (20, 20_000), (600, 500), (20, 20_000), (2160, 500)])
+    result = propose_audio_endings(audio, 0, 3000)
+    assert result.status == "uncertain"
+    assert not result.suggestions
+
+
+def test_finds_gap_between_short_active_sections(tmp_path: Path) -> None:
+    audio = tmp_path / "sparse.wav"
+    make_wav(audio, [(1200, 0), (100, 10_000), (600, 0), (100, 10_000), (2000, 0)])
+    result = propose_audio_endings(audio, 0, 3000)
+    assert result.status == "suggestions"
+    assert any(1300 <= item.end_ms <= 1900 for item in result.suggestions)
+
+
 def test_analysis_window_is_clipped_at_both_audio_ends(clear_gap: Path) -> None:
     near_start = propose_audio_endings(clear_gap, 0, 200)
     near_end = propose_audio_endings(clear_gap, 2000, 4000)
