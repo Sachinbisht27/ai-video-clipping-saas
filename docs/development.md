@@ -108,6 +108,16 @@ The default is one batch of up to four candidates. Use `--start-batch` and a new
 
 Scores from separate batches are not calibrated against each other. Each batch has its own short and long order; when multiple batches are processed, the combined results stay in input order and must not be treated as a global leaderboard. Review the proposed clips and their cited source words before use. The `boundary_variants` groups highlight similar time ranges for review; they do not select a better version, change scores, or remove candidates. When both clips are at most 20 seconds, each must overlap the group’s first clip by at least 80% of their combined span, with starts and ends within three seconds. Other pairs require 95% overlap and a five-second limit.
 
+## Inspect clip endings
+
+For an experimental local review of an existing clip's ending, provide its start and end in milliseconds relative to the source WAV:
+
+```sh
+uv run python -m clipforge.audio_endings_cli outputs/audio.wav 10000 45000 outputs/endings.json --transcript outputs/transcript.json
+```
+
+The command looks for low-energy gaps near the original end and saves up to eight alternatives in a new private JSON file. It supports the mono, 16-bit, 16 kHz WAV produced by the extraction command. It does not change audio or select an ending. Listen to each option: a quiet gap can occur inside a word or thought, and noise, music, or overlapping speech can make the result misleading. An uncertain result may contain no options. When a transcript is provided, `overlaps_transcript_word` warns if a proposed cut falls inside a reported word; it does not detect omitted or incorrectly timed words, or words removed entirely. Without a transcript, that field is null. The WAV and transcript must match; the tool cannot verify that they do.
+
 ## Configuration
 
 | Setting | Purpose |
