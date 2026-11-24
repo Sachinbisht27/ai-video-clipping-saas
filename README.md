@@ -67,7 +67,11 @@ The [local development guide](docs/development.md) covers running the API withou
 
 ## Contributing
 
-If you have repository access, make changes on a branch and open a pull request against `main`. The required GitHub checks must pass before merging.
+For substantive work, open or link an issue before starting. Maintainers track work in the [GitHub Project](https://github.com/users/Sachinbisht27/projects/2), which may require access.
+
+Make changes on a branch and open a pull request against `main`. Reference the issue in the pull request; use `Closes #123` when merging completes it. The required GitHub checks must pass before merging.
+
+When releases are published, their notes should describe their maturity and known limitations.
 
 ## License
 
