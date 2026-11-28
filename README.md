@@ -75,7 +75,7 @@ For substantive work, open or link an issue before starting. Maintainers track w
 
 Make changes on a branch and open a pull request against `main`. Reference the issue in the pull request; use `Closes #123` when merging completes it. The required GitHub checks must pass before merging.
 
-When releases are published, their notes should describe their maturity and known limitations.
+See the [changelog](CHANGELOG.md) for unreleased changes and known limitations.
 
 ## License
 
