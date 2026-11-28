@@ -43,7 +43,7 @@ For local development and transcription without Docker, you'll also need [uv](ht
    docker compose up --build -d
    ```
 
-Open the [API documentation](http://127.0.0.1:8000/docs) or check [API health](http://127.0.0.1:8000/api/v1/health). The health endpoint checks the API process, not the database. Docker runs the backend and database; there is no video-clipping interface yet.
+Open the [homepage](http://127.0.0.1:8000/) to explore the interactive example, the [API documentation](http://127.0.0.1:8000/docs), or [API health](http://127.0.0.1:8000/api/v1/health). The health endpoint checks the API process, not the database. The homepage is a demonstration; sign-in and the video-clipping interface are not implemented yet.
 
 To stop the containers while keeping database data:
 

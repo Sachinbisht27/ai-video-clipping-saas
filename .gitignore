@@ -42,3 +42,8 @@ logs/
 .DS_Store
 .idea/
 .vscode/
+
+# Browser testing
+node_modules/
+playwright-report/
+test-results/

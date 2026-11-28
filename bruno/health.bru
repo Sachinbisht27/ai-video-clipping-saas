@@ -1,0 +1,22 @@
+meta {
+  name: API health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/health
+  body: none
+  auth: none
+}
+
+docs {
+  Reports whether the API process is responding. This does not check the database.
+}
+
+tests {
+  test("API reports healthy", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("healthy");
+  });
+}
