@@ -16,13 +16,31 @@ def main() -> int:
     parser.add_argument("output", type=Path, help="Path for a new MP4 file")
     parser.add_argument("start_ms", type=int, help="Selected start in WAV milliseconds")
     parser.add_argument("end_ms", type=int, help="Selected end in WAV milliseconds")
+    parser.add_argument(
+        "--allow-video-tail-hold",
+        action="store_true",
+        help="Hold the last picture for an audio tail of up to 250 ms",
+    )
     args = parser.parse_args()
     try:
-        result = export_video_clip(args.video, args.audio, args.output, args.start_ms, args.end_ms)
+        result = export_video_clip(
+            args.video,
+            args.audio,
+            args.output,
+            args.start_ms,
+            args.end_ms,
+            allow_video_tail_hold=args.allow_video_tail_hold,
+        )
     except VideoExportError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     print(f"Exported {result.duration_ms / 1000:.3f}s clip to {args.output}")
+    if result.held_video_frames:
+        print(
+            f"Held the final video frame for the {result.video_tail_ms:.1f}ms audio tail "
+            f"({result.held_video_frames} frame(s); frame length "
+            f"{result.video_frame_duration_ms:.1f}ms)."
+        )
     return 0
 
 

@@ -31,10 +31,14 @@ class ExportMetadata:
     start_ms: int
     end_ms: int
     duration_ms: int
+    video_tail_ms: float
+    held_video_frames: int
+    video_frame_duration_ms: float
 
 
 _TIMING_TOLERANCE_SECONDS = 0.002
 _ZERO_TOLERANCE_SECONDS = 0.0001
+_MAX_VIDEO_TAIL_SECONDS = Fraction(1, 4)
 
 
 def _integer(value: object) -> bool:
@@ -305,15 +309,25 @@ def _verify_exported_decode(path: Path) -> None:
 
 
 def export_video_clip(
-    video: Path, audio: Path, output: Path, start_ms: int, end_ms: int
+    video: Path,
+    audio: Path,
+    output: Path,
+    start_ms: int,
+    end_ms: int,
+    *,
+    allow_video_tail_hold: bool = False,
 ) -> ExportMetadata:
     """Export one audio-relative range after checking supported source timing.
 
     Media is local and must be supplied by the caller. The requested interval is
     in WAV-relative milliseconds; actual video boundaries are frame-quantized.
     The output is a new private file; source and reference are not modified.
+    With explicit opt-in, at most 250 ms of audio beyond the video may be
+    covered by repeating its final frame. Audio is never stretched or invented.
     """
     video, audio, output = Path(video), Path(audio), Path(output)
+    if not isinstance(allow_video_tail_hold, bool):
+        raise VideoExportError("Invalid video tail hold option")
     if not _integer(start_ms) or not _integer(end_ms) or start_ms < 0 or end_ms <= start_ms:
         raise VideoExportError("Invalid clip timing")
     if output.suffix.lower() != ".mp4" or not output.parent.is_dir():
@@ -325,8 +339,19 @@ def export_video_clip(
     video_end = _continuous_end(video, "v:0", frame_rate)
     audio_end = _continuous_end(video, "a:0", audio_rate)
     wav_end = _verify_wav(video, audio)
-    if Fraction(end_ms, 1000) > min(video_end, audio_end, wav_end):
+    requested_start = Fraction(start_ms, 1000)
+    requested_end = Fraction(end_ms, 1000)
+    frame_duration = 1 / frame_rate
+    if requested_start > video_end - frame_duration:
+        raise VideoExportError("Clip does not include an available source video frame")
+    if requested_end > min(audio_end, wav_end):
         raise VideoExportError("Clip ends beyond the source video or audio")
+    tail = max(Fraction(0), requested_end - video_end)
+    if tail and not allow_video_tail_hold:
+        raise VideoExportError("Clip ends beyond the source video or audio")
+    if tail > _MAX_VIDEO_TAIL_SECONDS:
+        raise VideoExportError("Clip exceeds the maximum video tail hold")
+    held_frames = math.ceil(tail * frame_rate)
 
     temporary: Path | None = None
     try:
@@ -336,26 +361,30 @@ def export_video_clip(
         temporary = Path(name)
         os.close(descriptor)
         duration = end_ms - start_ms
-        result = _run_tool(
+        command = [
+            "ffmpeg",
+            "-nostdin",
+            "-v",
+            "error",
+            "-protocol_whitelist",
+            "file,pipe",
+            "-ss",
+            f"{start_ms / 1000:.3f}",
+            "-i",
+            str(video.resolve(strict=True)),
+            "-t",
+            f"{duration / 1000:.3f}",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0",
+            "-map_metadata",
+            "-1",
+        ]
+        if held_frames:
+            command.extend(["-vf", f"tpad=stop_mode=clone:stop={held_frames}"])
+        command.extend(
             [
-                "ffmpeg",
-                "-nostdin",
-                "-v",
-                "error",
-                "-protocol_whitelist",
-                "file,pipe",
-                "-ss",
-                f"{start_ms / 1000:.3f}",
-                "-i",
-                str(video.resolve(strict=True)),
-                "-t",
-                f"{duration / 1000:.3f}",
-                "-map",
-                "0:v:0",
-                "-map",
-                "0:a:0",
-                "-map_metadata",
-                "-1",
                 "-c:v",
                 "libx264",
                 "-preset",
@@ -370,9 +399,9 @@ def export_video_clip(
                 "+faststart",
                 "-y",
                 str(temporary),
-            ],
-            timeout=3600,
+            ]
         )
+        result = _run_tool(command, timeout=3600)
         if result.returncode or temporary.stat().st_size <= 0:
             raise VideoExportError("FFmpeg could not export the clip")
         _verify_exported_coverage(temporary, duration, frame_rate)
@@ -389,4 +418,11 @@ def export_video_clip(
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
-    return ExportMetadata(start_ms=start_ms, end_ms=end_ms, duration_ms=end_ms - start_ms)
+    return ExportMetadata(
+        start_ms=start_ms,
+        end_ms=end_ms,
+        duration_ms=end_ms - start_ms,
+        video_tail_ms=float(tail * 1000),
+        held_video_frames=held_frames,
+        video_frame_duration_ms=float(frame_duration * 1000),
+    )
