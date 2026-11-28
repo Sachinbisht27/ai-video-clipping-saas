@@ -16,5 +16,5 @@ This project is experimental and is not yet a complete video-clipping service.
 - The homepage example uses sample content. Sign-in and a connected creator dashboard are not implemented.
 - Suggestions are unranked and may be empty or incomplete. Creators must review context, speaker labels and boundaries before exporting.
 - Long recordings may need multiple runs. Provider rate limits can interrupt processing; separate result files are not automatically combined or deduplicated.
-- The long-video workflow has not yet been validated across every section. Laughter, overlapping speech and natural endings need further listening validation.
+- One long video was processed across multiple runs; its suggestions have not all been reviewed. Laughter, overlapping speech and natural endings need further listening validation.
 - Video export supports only certain audio and video timelines; check the exported clip and sound.
