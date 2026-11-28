@@ -11,7 +11,7 @@ module.exports = defineConfig({
     { name: 'mobile-chromium', use: { ...devices['iPhone SE'], browserName: 'chromium' } },
   ],
   webServer: {
-    command: '.venv/bin/python -m uvicorn clipforge.main:app --host 127.0.0.1 --port 8766',
+    command: 'uv run python -m uvicorn clipforge.main:app --host 127.0.0.1 --port 8766',
     url: 'http://127.0.0.1:8766/api/v1/health',
     reuseExistingServer: false,
   },
