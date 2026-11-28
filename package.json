@@ -1,0 +1,9 @@
+{
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  },
+  "private": true,
+  "scripts": {
+    "test:e2e": "playwright test"
+  }
+}

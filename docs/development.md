@@ -22,7 +22,7 @@ uv sync --locked
 uv run uvicorn clipforge.main:app --reload
 ```
 
-Open [API documentation](http://127.0.0.1:8000/docs). Stop the server with `Ctrl+C`. The health endpoint reports whether the API is responding; it does not check the database.
+Open the [homepage](http://127.0.0.1:8000/) or [API documentation](http://127.0.0.1:8000/docs). Stop the server with `Ctrl+C`. The health endpoint reports whether the API is responding; it does not check the database.
 
 ## Transcribe a video
 
@@ -163,3 +163,23 @@ uv run mypy src
 ```
 
 GitHub Actions runs these checks for pushes and pull requests. FFmpeg and FFprobe must be available for the media integration tests.
+
+## Testing roadmap
+
+See the [testing and API documentation roadmap](testing-roadmap.md) for planned browser tests, Bruno collections, and UI review practices.
+
+## Browser tests
+
+Install Node.js 24, then from the project folder run:
+
+```sh
+npm ci
+npx playwright install chromium
+npm run test:e2e
+```
+
+The tests start their own local server on port 8766 using the Python environment created by `uv sync --locked`. Keep that port available. They cover desktop and mobile Chromium; Firefox, WebKit, real devices, and visual review remain separate checks. Failure traces are stored locally in `test-results/`; treat them as potentially sensitive.
+
+## API requests in Bruno
+
+Open the `bruno` folder as a collection in Bruno, select the `local` environment, and run **API health** while the API is running. This endpoint checks the API process, not PostgreSQL. The live API schema is at [API documentation](http://127.0.0.1:8000/docs). Never add credentials or private transcripts to the collection.
