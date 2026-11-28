@@ -24,6 +24,33 @@ uv run uvicorn clipforge.main:app --reload
 
 Open the [homepage](http://127.0.0.1:8000/) or [API documentation](http://127.0.0.1:8000/docs). Stop the server with `Ctrl+C`. The health endpoint reports whether the API is responding; it does not check the database.
 
+## Try the local clipping workflow
+
+This experimental workflow prepares candidate suggestions for review. It sends extracted audio to Deepgram and transcript text to Groq; both may use credits. Use only content you have permission to process. Set `DEEPGRAM_API_KEY` and `GROQ_API_KEY` in `.env` and ensure FFmpeg and FFprobe are installed.
+
+```sh
+mkdir -p outputs
+uv run python -m clipforge.workflow_cli prepare /path/to/video.mp4 outputs/my-job --language multi --diarizer v2
+```
+
+`outputs/my-job` must not already exist. The command creates a private directory with the extracted WAV, transcript and `candidates.json`. It processes one Groq window by default; use `--max-windows N` to explicitly process more. Exit code 2 means proposals were rejected or some windows remain unprocessed: inspect `windowing` and `next_window_index` in the JSON. Resume with a new output filename and the reported window index:
+
+```sh
+uv run python -m clipforge.workflow_cli resume outputs/my-job outputs/my-job/more.json --start-window 1 --max-windows 1
+```
+
+Use the actual `next_window_index`; results from separate runs are not automatically combined or deduplicated. Other failures also leave completed files in place; use a new job directory for a fresh run.
+
+Suggestions may be empty, incomplete, or have incorrect speaker labels. Listen to the opening and ending—including any reactions or laughter—before choosing a range. The workflow does not automatically select or trim clips.
+
+To export a range you have reviewed, use the original video and WAV-relative times in milliseconds:
+
+```sh
+uv run python -m clipforge.workflow_cli export /path/to/video.mp4 outputs/my-job outputs/reviewed.mp4 10000 45000
+```
+
+The output must be new. Export validates the audio against the source and may reject unsupported timelines; see [export details](#export-a-selected-clip). Review the resulting video as well. Keep the job directory private.
+
 ## Transcribe a video
 
 Add your Deepgram key to `.env` as `DEEPGRAM_API_KEY`. For a local MP4 containing video and audio, run:

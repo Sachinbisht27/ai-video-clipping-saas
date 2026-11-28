@@ -51,6 +51,10 @@ To stop the containers while keeping database data:
 docker compose down
 ```
 
+## Try the local workflow
+
+The experimental [local workflow](docs/development.md#try-the-local-clipping-workflow) extracts audio, transcribes it, and proposes moments for review. It uses Deepgram and Groq and may incur API charges. You must review a range before exporting it.
+
 ## Try transcription
 
 To extract audio and transcribe a local video, follow the [local development guide](docs/development.md#transcribe-a-video). The command sends audio to Deepgram and may use API credits. Use a video you have permission to process.
@@ -71,7 +75,7 @@ For substantive work, open or link an issue before starting. Maintainers track w
 
 Make changes on a branch and open a pull request against `main`. Reference the issue in the pull request; use `Closes #123` when merging completes it. The required GitHub checks must pass before merging.
 
-When releases are published, their notes should describe their maturity and known limitations.
+See the [changelog](CHANGELOG.md) for unreleased changes and known limitations.
 
 ## License
 
