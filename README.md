@@ -8,7 +8,7 @@
 
 A work-in-progress tool for finding short clips in longer videos.
 
-The backend can extract audio from an MP4, transcribe it with Deepgram, and find candidate sections. Transcript-based highlight ranking is experimental; video clipping is still in development.
+The backend can extract audio from an MP4, transcribe it with Deepgram, and find candidate sections. Transcript-based highlight ranking and local export of a manually selected clip are experimental.
 
 ## Requirements
 
