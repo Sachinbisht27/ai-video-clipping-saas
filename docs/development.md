@@ -104,7 +104,9 @@ For a clip you've reviewed, supply the original MP4, the matching extraction WAV
 uv run python -m clipforge.video_export_cli /path/to/video.mp4 outputs/audio.wav outputs/clip.mp4 10000 45000
 ```
 
-This local experiment checks the WAV against the video's decoded audio and accepts only supported, continuous, zero-start audio and video timelines. The requested range must fit within both streams. It creates a new H.264/AAC MP4 and refuses to overwrite existing files. Re-encoding and video frame boundaries can shift the visible cut slightly; review the exported video and its audio. Matching audio cannot prove that the transcript belongs to the WAV or that the selected visuals are the intended source.
+This local experiment checks the WAV against the video's decoded audio and accepts only supported, continuous, zero-start audio and video timelines. By default, the requested range must fit within both streams. It creates a new H.264/AAC MP4 and refuses to overwrite existing files. Re-encoding and video frame boundaries can shift the visible cut slightly; review the exported video and its audio. Matching audio cannot prove that the transcript belongs to the WAV or that the selected visuals are the intended source.
+
+If the audio continues briefly after the picture ends, the default is to reject the export. To keep an audio tail of up to 250 ms, add `--allow-video-tail-hold`. This repeats the final video frame and reports the hold; the visible result is rounded to whole frames. Check that the held image and audio ending look and sound natural.
 
 ## Rank candidates
 
